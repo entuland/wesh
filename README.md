@@ -46,6 +46,10 @@ The above files are saved there only temporarily because mods don't have writing
 
 During world startup the mod will move all the temporary files to the "/models" folder and will load them.
 
+You can't have two meshes with the same name (during the saving process the mod checks both the temporary meshes that haven't been loaded yet and those that have been already moved to the mod's folder).
+
+If you want to delete a mesh you need to delete its files from either the world's folder (if you haven't restarted it since you captured the mesh you want to delete) or from the mod's folder (if such mesh has been already moved by a world reload).
+
 By default, two versions of each mesh will be available:
 - plain version: it uses flat colors averaged from the colors of each wool block
 ![Plain version](/screenshots/version-plain.png)
