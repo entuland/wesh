@@ -37,7 +37,7 @@ When you confirm such name (you can cancel it by hitting the ESC key) you'll lik
 
 If you confirm the name by hitting ENTER you may not be presented with the above confirmation. It will appear in the chat as well just in case.
 
-Upon saving a few temporary files will be created in the "/modstorage/wesh" subfolder in your world's folder:
+Upon saving a few temporary files will be created in the "/mod_storage/wesh" subfolder in your world's folder:
 - the .obj file will contain a model with your build scaled down 16 times (so that it will occupy only one block)
 - the .dat file will contain the original name you have chosen for your mesh, along with some other data (read the section about using custom textures below)
 - the .matrix.dat file will contain a serialized version of your build, that may eventually get used to rebuild / reimport it in the game allowing you to alter it (right now you can't import them, so make sure you don't dismantle your build if you want to alter and capture it again)
