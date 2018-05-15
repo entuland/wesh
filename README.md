@@ -68,6 +68,7 @@ Looking at the filename (or knowing how the name gets converted) you can also wo
 
 # Using custom textures
 In the .dat file of each mesh you'll find something like this:
+
     return {
         description = "Your mesh name",
         variants = {
