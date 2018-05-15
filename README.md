@@ -16,24 +16,24 @@ If you like my contributions you may consider reading http://entuland.com/en/sup
     WBW
     WWW
 
-[Canvas recipe](/screenshots/canvas-recipe.png)
+![Canvas recipe](/screenshots/canvas-recipe.png)
 
 # How to use
 Place down a Canvas block, you'll see that it extends beyond its node space marking a 16x16x16 space.
 
-[Empty canvas](/screenshots/canvas-empty.png)
+![Empty canvas](/screenshots/canvas-empty.png)
 
 In this space you can build anthing you like by using colored wool blocks.
 
-[Building inside the canvas](/screenshots/canvas-build.png)
+![Building inside the canvas](/screenshots/canvas-build.png)
 
 Once you're done with your build, go to the Canvas block and right click it: you'll be asked to provide a name for your mesh (you can type any text in there, with uppercases and any symbol).
 
-[Request for name](/screenshots/prompt-name.png)
+![Request for name](/screenshots/prompt-name.png)
 
 When you confirm such name (you can cancel it by hitting the ESC key) you'll likely get a confirmation like this:
 
-[Save confirmation](/screenshots/save-confirm.png)
+![Save confirmation](/screenshots/save-confirm.png)
 
 If you confirm the name by hitting ENTER you may not be presented with the above confirmation. It will appear in the chat as well just in case.
 
@@ -48,14 +48,14 @@ During world startup the mod will move all the temporary files to the "/models" 
 
 By default, two versions of each mesh will be available:
 - plain version: it uses flat colors averaged from the colors of each wool block
-[Plain version](/screenshots/version-plain.png)
+![Plain version](/screenshots/version-plain.png)
 
 - wool version: it will use the actual textures used by the wool blocks
-[Wool version](/screenshots/version-wool.png)
+![Wool version](/screenshots/version-wool.png)
 
 Such new blocks can't be crafted (I plan to make sort of a crafting station where you put some material and chose the model you want to craft), so you either need to give them to yourself or to find them in the Creative inventory. All such meshes show up if you filter for either "wesh" or "mesh".
 
-[Creative search](/screenshots/creative-search.png)
+![Creative search](/screenshots/creative-search.png)
 
 Looking at the filename (or knowing how the name gets converted) you can also work out the actual nodename to be used in your "/give" or "/giveme" chat command, for example:
 - chosen name: "Test One!"
