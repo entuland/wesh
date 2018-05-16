@@ -126,12 +126,12 @@ function wesh._init_geometry()
 
 	-- vertices refer to the above cube_vertices table
 	wesh.face_construction = {
-		bottom = { vertices = { 1, 2, 3, 4}, normal = 1 },
-		top    = { vertices = { 5, 6, 7, 8}, normal = 2 },
-		back   = { vertices = { 1, 5, 8, 2}, normal = 3 },
-		front  = { vertices = { 3, 7, 6, 4}, normal = 4 },
-		left   = { vertices = { 5, 1, 4, 6}, normal = 5 },
-		right  = { vertices = { 2, 8, 7, 3}, normal = 6 },
+		bottom = { vertices = { 4, 3, 2, 1 }, normal = 1 },
+		top    = { vertices = { 8, 7, 6, 5 }, normal = 2 },
+		back   = { vertices = { 2, 8, 5, 1 }, normal = 3 },
+		front  = { vertices = { 4, 6, 7, 3 }, normal = 4 },
+		left   = { vertices = { 6, 4, 1, 5 }, normal = 5 },
+		right  = { vertices = { 3, 7, 8, 2 }, normal = 6 },
 	}
 	
 	wesh.face_normals = {
