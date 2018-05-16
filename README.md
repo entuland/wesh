@@ -52,12 +52,14 @@ You can't have two meshes with the same name (during the saving process the mod 
 
 If you want to delete a mesh you need to delete its files from either the world's folder (if you haven't restarted it since you captured the mesh you want to delete) or from the mod's folder (if such mesh has been already moved by a world reload).
 
-By default, two versions of each mesh will be available:
-- plain version: it uses flat colors averaged from the colors of each wool block
+By default, four versions of each mesh will be available:
+- plain versions: they use flat colors averaged from the colors of each wool block, with a bordered variant
 ![Plain version](/screenshots/version-plain.png)
+![Plain bordered compare](/screenshots/plain-bordered-compare.png)
 
-- wool version: it will use the actual textures used by the wool blocks
+- wool versions: they will use the actual textures used by the wool blocks, with a bordered variant
 ![Wool version](/screenshots/version-wool.png)
+![Wool bordered compare](/screenshots/wool-bordered-compare.png)
 
 Such new blocks can't be crafted (I plan to make sort of a crafting station where you put some material and chose the model you want to craft), so you either need to give them to yourself or to find them in the Creative inventory. All such meshes show up if you filter for either "wesh" or "mesh".
 
@@ -66,7 +68,7 @@ Such new blocks can't be crafted (I plan to make sort of a crafting station wher
 Looking at the filename (or knowing how the name gets converted) you can also work out the actual nodename to be used in your "/give" or "/giveme" chat command, for example:
 - chosen name: "Test One!"
 - resulting filename: "mesh_test_one.obj"
-- resulting nodename: "wesh:mesh_test_one"
+- resulting nodename: "wesh:mesh_test_one_VERSION" where "VERSION" will actually be something like "wool" or "plainborder" or whatever other variant has been enabled (see the following section for details about this)
 
 # Using custom textures
 In the .dat file of each mesh you'll find something like this:
@@ -74,24 +76,26 @@ In the .dat file of each mesh you'll find something like this:
     return {
         description = "Your mesh name",
         variants = {
+            plain = "plain-16.png",
+            plainborder = "plain-border-72.png",
             wool = "wool-72.png",
-            plain = "wool-16.png",
+            woolborder = "wool-border-72.png",
         },
     }
 
 In order to add a new variant simply add a line with your texture name and make sure you save such texture file in the "/textures" folder of the mod. You can also remove the lines you're not interested in and the mod will not generate those variants.
 
-For example, here we remove the "wool" version and add a custom one:
+For example, here we remove all but the "plain" version and add a custom one:
 
     return {
         description = "Your mesh name",
         variants = {
-            plain = "wool-16.png",
+            plain = "plain-16.png",
             my_texture_plain_name = "my-texture-file-name.png",
         },
     }
 
-Have a look at "wool-72.png" to see where each color goes.
+Have a look at "wool-72.png" to see where each color goes, or use the included [textures-72.xcf](/textures/textures-72.xcf) file (GIMP format) which has layers for adding the borders as well.
 
 A couple considerations:
 - the bottom-right transparent area never gets used

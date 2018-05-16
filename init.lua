@@ -284,8 +284,10 @@ function wesh.prepare_data_file(description)
 return {
 	description = ]] .. ("%q"):format(description) .. [[,
 	variants = {
+		plain = "plain-16.png",
+		plainborder = "plain-border-72.png",
 		wool = "wool-72.png",
-		plain = "wool-16.png",
+		woolborder = "wool-border-72.png",
 	},
 }
 ]]
@@ -320,7 +322,7 @@ function wesh._load_mesh(obj_filename)
 	end
 	
 	local description = data.description or "Custom Woolen Mesh"
-	local variants = data.variants or { plain = "wool-16.png" }
+	local variants = data.variants or { plain = "plain-16.png" }
 	
 	local nodename = obj_filename:gsub("[^%w]+", "_"):gsub("_obj", "")
 	
