@@ -5,6 +5,8 @@ Developed and tested on Minetest 0.4.16 - try in other versions at your own risk
 
 If you like my contributions you may consider reading http://entuland.com/en/support-entuland
 
+WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
+
 # Recipe for the Canvas block
 
     wesh:canvas
