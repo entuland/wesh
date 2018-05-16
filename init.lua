@@ -28,25 +28,34 @@ end
 function wesh._main_bindings()
 	minetest.register_on_player_receive_fields(wesh.on_receive_fields)
 
-	minetest.register_craft({
-		output = "wesh:canvas",
-		recipe = {
-			{'group:wool', 'group:wool', 'group:wool'},
-			{'group:wool', 'default:bronze_ingot', 'group:wool'},
-			{'group:wool', 'group:wool', 'group:wool'},
-		}
-	})
-
-	minetest.register_node("wesh:canvas", {
-		drawtype = "mesh",
-		mesh = "zzz_wesh_canvas.obj",
-		tiles = { "wool-72.png" },
-		paramtype2 = "facedir",
-		on_rightclick = wesh.canvas_interaction,
-		description = "Woolen Mesh Canvas",
-		walkable = true,
-		groups = { dig_immediate = 3},
-	})
+	local function register_canvas(size, ingot)
+		minetest.register_craft({
+			output = "wesh:canvas" .. size,
+			recipe = {
+				{"group:wool", "group:wool", "group:wool"},
+				{"group:wool", "default:" .. ingot .. "_ingot", "group:wool"},
+				{"group:wool", "group:wool", "group:wool"},
+			}
+		})
+		minetest.register_node("wesh:canvas" .. size, {
+			drawtype = "mesh",
+			mesh = "zzz_canvas" .. size .. ".obj",
+			tiles = { "canvas.png" },
+			paramtype2 = "facedir",
+			on_rightclick = wesh.canvas_interaction,
+			description = "Woolen Mesh Canvas - Size " .. size,
+			walkable = true,
+			groups = { dig_immediate = 3 },
+		})
+	end
+	
+	register_canvas("02", "steel")
+	register_canvas("04", "copper")
+	register_canvas("08", "tin")
+	register_canvas("16", "bronze")
+	register_canvas("32", "gold")
+	
+	minetest.register_alias("wesh:canvas", "wesh:canvas16")
 end
 
 -- creates a 4x4 grid of UV mappings, each with a margin of one pixel
@@ -157,16 +166,17 @@ function wesh._init_geometry()
 	}
 end
 
-function wesh._reset_geometry()
+function wesh._reset_geometry(canv_size)
 	wesh.matrix = {}
 	wesh.vertices = {}
 	wesh.vertices_indices = {}
 	wesh.faces = {}
-	wesh.traverse_matrix(function(p)
+	local function reset(p)
 		if not wesh.matrix[p.x] then wesh.matrix[p.x] = {} end
 		if not wesh.matrix[p.x][p.y] then wesh.matrix[p.x][p.y] = {} end
 		wesh.matrix[p.x][p.y][p.z] = "air"	
-	end)
+	end
+	wesh.traverse_matrix(reset, canv_size)
 end
 
 -- ========================================================================
@@ -183,20 +193,31 @@ end
 function wesh.on_receive_fields(player, formname, fields)
 	if formname == "save_mesh" then
 		local canvas = wesh.player_canvas[player:get_player_name()]
-		wesh.save_new_mesh(canvas.pos, canvas.facedir, player, fields.meshname)
+		canvas.node = minetest.get_node_or_nil(canvas.pos)
+		if not canvas.node then return end
+
+		local canv_size = canvas.node.name:gsub(".*(%d%d)$", "%1")
+		if not canv_size then canv_size = 16 end
+
+		canv_size = tonumber(canv_size)
+		if canv_size ~= 2 and canv_size ~= 4 and canv_size ~= 8 and canv_size ~= 32 then
+			canv_size = 16
+		end
+
+		wesh.save_new_mesh(canvas.pos, canv_size, canvas.facedir, player, fields.meshname)
 	end
 end
 
-function wesh.save_new_mesh(canvas_pos, facedir, player, description)
+function wesh.save_new_mesh(canvas_pos, canv_size, facedir, player, description)
 	-- empty all helper variables
-	wesh._reset_geometry()
+	wesh._reset_geometry(canv_size)
 	
 	-- read all nodes from the canvas space in the world
 	-- extract the colors and put them into a helper matrix of color voxels
-	wesh.traverse_matrix(wesh.node_to_voxel, canvas_pos, facedir)
+	wesh.traverse_matrix(wesh.node_to_voxel, canv_size, canv_size, canvas_pos, facedir)
 	
 	-- generate faces according to voxels
-	wesh.traverse_matrix(wesh.voxel_to_faces)
+	wesh.traverse_matrix(wesh.voxel_to_faces, canv_size, canv_size)
 	
 	-- this will be the actual content of the .obj file
 	local vt_section = wesh.vertex_textures
@@ -343,13 +364,13 @@ end
 -- mesh generation helpers
 -- ========================================================================
 
-function wesh.construct_face(rel_pos, texture_vertices, facename, vertices, normal_index)
+function wesh.construct_face(rel_pos, canv_size, texture_vertices, facename, vertices, normal_index)
 	local normal = wesh.face_normals[normal_index]
 	local hider_pos = vector.add(rel_pos, normal)
-	if not wesh.out_of_bounds(hider_pos) and wesh.get_voxel_color(hider_pos) ~= "air" then return end
+	if not wesh.out_of_bounds(hider_pos, canv_size) and wesh.get_voxel_color(hider_pos) ~= "air" then return end
 	local face_line = "f "
 	for i, vertex in ipairs(vertices) do
-		local index = wesh.get_vertex_index(rel_pos, vertex)
+		local index = wesh.get_vertex_index(rel_pos, canv_size, vertex)
 		face_line = face_line .. index .. "/" .. texture_vertices[i] .. "/" .. normal_index .. " "
 	end
 	table.insert(wesh.faces, face_line)
@@ -373,18 +394,18 @@ end
 
 function wesh.get_node_color(pos)
 	local node = minetest.get_node_or_nil(pos)
-	if not node then return "trasparent" end
+	if not node then return "air" end
 	local parts = string.split(node.name, ":")
 	return parts[#parts]
 end
 
-function wesh.make_absolute(canvas_pos, facedir, relative_pos)
-	-- relative positions range from (1, 1, 1) to (16, 16, 16)
+function wesh.make_absolute(canvas_pos, canv_size, facedir, relative_pos)
+	-- relative positions range from (1, 1, 1) to (canv_size, canv_size, canv_size)
 
 	-- shift relative to canvas node within canvas space
 	local shifted_pos = {}
 	shifted_pos.y = relative_pos.y - 1
-	shifted_pos.x = relative_pos.x - 8
+	shifted_pos.x = relative_pos.x - (canv_size / 2)
 	shifted_pos.z = relative_pos.z
 	
 	-- transform according to canvas facedir
@@ -400,33 +421,33 @@ function wesh.transform(facedir, pos)
 	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
 end
 
-function wesh.node_to_voxel(rel_pos, canvas_pos, facedir)
-	local abs_pos = wesh.make_absolute(canvas_pos, facedir, rel_pos)
+function wesh.node_to_voxel(rel_pos, canv_size, canvas_pos, facedir)
+	local abs_pos = wesh.make_absolute(canvas_pos, canv_size, facedir, rel_pos)
 	local color = wesh.get_node_color(abs_pos)
 	wesh.set_voxel_color(rel_pos, color)
 end
 
-function wesh.voxel_to_faces(rel_pos)
+function wesh.voxel_to_faces(rel_pos, canv_size)
 	local color = wesh.get_voxel_color(rel_pos)
 	if color == "air" then return end
 	for facename, facedata in pairs(wesh.face_construction) do
 		local texture_vertices = wesh.get_texture_vertices(color)
-		wesh.construct_face(rel_pos, texture_vertices, facename, facedata.vertices, facedata.normal)		
+		wesh.construct_face(rel_pos, canv_size, texture_vertices, facename, facedata.vertices, facedata.normal)		
 	end
 end
 
-function wesh.get_vertex_index(pos, vertex_number)
+function wesh.get_vertex_index(pos, canv_size, vertex_number)
 	-- get integral offset of vertices related to voxel center
 	local offset = wesh.cube_vertices[vertex_number]
 	
 	-- convert integral offset to real offset
-	offset = vector.multiply(offset, 1/32)
+	offset = vector.multiply(offset, 1/canv_size/2)
 	
-	-- scale voxel center from range 1~16 to range 1/16 ~ 1
-	pos = vector.divide(pos, 16)
+	-- scale voxel center from range 1~canv_size to range 1/canv_size ~ 1
+	pos = vector.divide(pos, canv_size)
 		
 	-- center whole mesh around zero and shift it to make room for offsets
-	pos = vector.subtract(pos, 1/2 + 1/32)
+	pos = vector.subtract(pos, 1/2 + 1/canv_size/2)
 	
 	-- not really sure whether this should be done here,
 	-- but if I don't do this the resulting mesh will be wrongly mirrored
@@ -465,10 +486,10 @@ end
 -- generic helpers
 -- ========================================================================
 
-function wesh.out_of_bounds(pos)
-	return pos.x < 1 or pos.x > 16
-		or pos.y < 1 or pos.y > 16
-		or pos.z < 1 or pos.z > 16
+function wesh.out_of_bounds(pos, canv_size)
+	return pos.x < 1 or pos.x > canv_size
+		or pos.y < 1 or pos.y > canv_size
+		or pos.z < 1 or pos.z > canv_size
 end
 
 function wesh.check_plain(text)
@@ -477,10 +498,10 @@ function wesh.check_plain(text)
 	return text:gsub("[^%w]+", "_"):lower()
 end
 
-function wesh.traverse_matrix(callback, ...)
-	for x = 1, 16 do
-		for y = 1, 16 do
-			for z = 1, 16 do
+function wesh.traverse_matrix(callback, canv_size, ...)
+	for x = 1, canv_size do
+		for y = 1, canv_size do
+			for z = 1, canv_size do
 				callback({x = x, y = y, z = z}, ...)
 			end
 		end

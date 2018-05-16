@@ -7,29 +7,39 @@ If you like my contributions you may consider reading http://entuland.com/en/sup
 
 WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
 
-# Recipe for the Canvas block
+# Canvas recipes
 
-    wesh:canvas
-    
     W = any wool block
-    B = bronze ingot
-  
+    I = ingot
+    
     WWW
-    WBW
+    WIW
     WWW
+    
+    wesh:canvas02 (steel ingot)
+    wesh:canvas04 (copper ingot)
+    wesh:canvas08 (tin ingot)
+    wesh:canvas16 (bronze ingot) - wesh:canvas gives you wesh:canvas16, kept for compatibility
+    wesh:canvas32 (gold ingot)
 
 ![Canvas recipe](/screenshots/canvas-recipe.png)
 
 # How to use
-Place down a Canvas block, you'll see that it extends beyond its node space marking a 16x16x16 space.
+Place down a Canvas block, you'll see that it extends beyond its node space marking a cube (available in sizes 2, 4, 8, 16 and 32)
+
+The following screenshots show the old texture of the canvas (the one and only 16x16x16) now replaced by a new texture marked 16 just like the ones you can here below:
+
+![Canvas sizes](/screenshots/canvas-sizes.png)
+
+So here is the example using the canvas with size 16 marking its capture space:
 
 ![Empty canvas](/screenshots/canvas-empty.png)
 
-In this space you can build anthing you like by using colored wool blocks.
+In this space you can build anthing you like by using colored wool blocks_
 
 ![Building inside the canvas](/screenshots/canvas-build.png)
 
-Once you're done with your build, go to the Canvas block and right click it: you'll be asked to provide a name for your mesh (you can type any text in there, with uppercases and any symbol).
+Once you're done with your build, go to the Canvas block and right click it: you'll be asked to provide a name for your mesh (you can type any text in there, with uppercases and any symbol):
 
 ![Request for name](/screenshots/prompt-name.png)
 
@@ -40,7 +50,7 @@ When you confirm such name (you can cancel it by hitting the ESC key) you'll lik
 If you confirm the name by hitting ENTER you may not be presented with the above confirmation. It will appear in the chat as well just in case.
 
 Upon saving a few temporary files will be created in the "/mod_storage/wesh" subfolder in your world's folder:
-- the .obj file will contain a model with your build scaled down 16 times (so that it will occupy only one block)
+- the .obj file will contain a model with your build scaled down to fit exactly one block
 - the .dat file will contain the original name you have chosen for your mesh, along with some other data (read the section about using custom textures below)
 - the .matrix.dat file will contain a serialized version of your build, that may eventually get used to rebuild / reimport it in the game allowing you to alter it (right now you can't import them, so make sure you don't dismantle your build if you want to alter and capture it again)
 
@@ -83,6 +93,8 @@ In the .dat file of each mesh you'll find something like this:
         },
     }
 
+(please consider that the number "16" here above indicates the size of the texture, it has nothing to do with the size of the canvas you use to capture your build)
+    
 In order to add a new variant simply add a line with your texture name and make sure you save such texture file in the "/textures" folder of the mod. You can also remove the lines you're not interested in and the mod will not generate those variants.
 
 For example, here we remove all but the "plain" version and add a custom one:
