@@ -126,12 +126,21 @@ function wesh._init_geometry()
 
 	-- vertices refer to the above cube_vertices table
 	wesh.face_construction = {
-		bottom = { vertices = { 1, 2, 3, 4}, hider_offset = {x =  0, y = -1, z =  0 } },
-		top    = { vertices = { 5, 6, 7, 8}, hider_offset = {x =  0, y =  1, z =  0 } },
-		back   = { vertices = { 1, 5, 8, 2}, hider_offset = {x =  0, y =  0, z = -1 } },
-		front  = { vertices = { 3, 7, 6, 4}, hider_offset = {x =  0, y =  0, z =  1 } },
-		left   = { vertices = { 5, 1, 4, 6}, hider_offset = {x = -1, y =  0, z =  0 } },
-		right  = { vertices = { 2, 8, 7, 3}, hider_offset = {x =  1, y =  0, z =  0 } },
+		bottom = { vertices = { 1, 2, 3, 4}, normal = 1 },
+		top    = { vertices = { 5, 6, 7, 8}, normal = 2 },
+		back   = { vertices = { 1, 5, 8, 2}, normal = 3 },
+		front  = { vertices = { 3, 7, 6, 4}, normal = 4 },
+		left   = { vertices = { 5, 1, 4, 6}, normal = 5 },
+		right  = { vertices = { 2, 8, 7, 3}, normal = 6 },
+	}
+	
+	wesh.face_normals = {
+		{x =  0, y = -1, z =  0 },
+		{x =  0, y =  1, z =  0 },
+		{x =  0, y =  0, z = -1 },
+		{x =  0, y =  0, z =  1 },
+		{x = -1, y =  0, z =  0 },
+		{x =  1, y =  0, z =  0 },
 	}
 	
 	-- helper mapper for transformation functions
@@ -192,8 +201,9 @@ function wesh.save_new_mesh(canvas_pos, facedir, player, description)
 	-- this will be the actual content of the .obj file
 	local vt_section = wesh.vertex_textures
 	local v_section = wesh.vertices_to_string()
+	local vn_section = wesh.normals_to_string()
 	local f_section = table.concat(wesh.faces, "\n")
-	local meshdata = vt_section .. v_section .. f_section
+	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
 	wesh.save_mesh_to_file(meshdata, description, player)
 end
@@ -331,13 +341,14 @@ end
 -- mesh generation helpers
 -- ========================================================================
 
-function wesh.construct_face(rel_pos, texture_vertices, facename, vertices, hider_offset)
-	local hider_pos = vector.add(rel_pos, hider_offset)
+function wesh.construct_face(rel_pos, texture_vertices, facename, vertices, normal_index)
+	local normal = wesh.face_normals[normal_index]
+	local hider_pos = vector.add(rel_pos, normal)
 	if not wesh.out_of_bounds(hider_pos) and wesh.get_voxel_color(hider_pos) ~= "air" then return end
 	local face_line = "f "
 	for i, vertex in ipairs(vertices) do
 		local index = wesh.get_vertex_index(rel_pos, vertex)
-		face_line = face_line .. index .. "/" .. texture_vertices[i] .. " "
+		face_line = face_line .. index .. "/" .. texture_vertices[i] .. "/" .. normal_index .. " "
 	end
 	table.insert(wesh.faces, face_line)
 end
@@ -398,7 +409,7 @@ function wesh.voxel_to_faces(rel_pos)
 	if color == "air" then return end
 	for facename, facedata in pairs(wesh.face_construction) do
 		local texture_vertices = wesh.get_texture_vertices(color)
-		wesh.construct_face(rel_pos, texture_vertices, facename, facedata.vertices, facedata.hider_offset)		
+		wesh.construct_face(rel_pos, texture_vertices, facename, facedata.vertices, facedata.normal)		
 	end
 end
 
@@ -441,6 +452,13 @@ function wesh.vertices_to_string()
 	return output
 end
 
+function wesh.normals_to_string()
+	local output = ""
+	for i, normal in ipairs(wesh.face_normals) do
+		output = output .. "vn " .. normal.x .. " " .. normal.y .. " " .. normal.z .. "\n"
+	end
+	return output
+end
 -- ========================================================================
 -- generic helpers
 -- ========================================================================
