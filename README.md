@@ -35,7 +35,7 @@ So here is the example using the canvas with size 16 marking its capture space:
 
 ![Empty canvas](/screenshots/canvas-empty.png)
 
-In this space you can build anthing you like by using colored wool blocks_
+In this space you can build anything you like by using colored wool blocks or most of the built-in blocks shipped with minetest_game:
 
 ![Building inside the canvas](/screenshots/canvas-build.png)
 
@@ -70,6 +70,9 @@ By default, four versions of each mesh will be available:
 - wool versions: they will use the actual textures used by the wool blocks, with a bordered variant
 ![Wool version](/screenshots/version-wool.png)
 ![Wool bordered compare](/screenshots/wool-bordered-compare.png)
+
+Sample of natural terrain capture:
+![Non wool capture](/screenshots/non-wool-capture.png)
 
 Such new blocks can't be crafted (I plan to make sort of a crafting station where you put some material and chose the model you want to craft), so you either need to give them to yourself or to find them in the Creative inventory. All such meshes show up if you filter for either "wesh" or "mesh".
 
@@ -113,3 +116,7 @@ A couple considerations:
 - the bottom-right transparent area never gets used
 - the used texture for each face will actually be a bit smaller (in the "wool-72.png" file the squares are 18 pixels in side, but the texture will only use a 16x16 square inside of it)
 - you're not forced to use any particular size for your texture as long as it's square (I guess, let me know if you find any problems)
+
+# Changing default colors assigned to nodes
+
+The file [nodecolors.conf](/nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. You're free to alter them or to add to this list as you please, just make sure you stick to wool colors cause any invalid color will be replaced by "air".
