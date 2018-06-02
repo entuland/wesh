@@ -74,6 +74,11 @@ By default, four versions of each mesh will be available:
 Sample of natural terrain capture:
 ![Non wool capture](/screenshots/non-wool-capture.png)
 
+Collision boxes will be built automatically depending on the extent of your mesh:
+![Auto collision box](/screenshots/auto-collision-box.png)
+
+Collision boxes are simple cuboids so you cannot create stairs (but you can create slabs, frames, carpets and so forth).
+
 Such new blocks can't be crafted (I plan to make sort of a crafting station where you put some material and chose the model you want to craft), so you either need to give them to yourself or to find them in the Creative inventory. All such meshes show up if you filter for either "wesh" or "mesh".
 
 ![Creative search](/screenshots/creative-search.png)
@@ -83,7 +88,7 @@ Looking at the filename (or knowing how the name gets converted) you can also wo
 - resulting filename: "mesh_test_one.obj"
 - resulting nodename: "wesh:mesh_test_one_VERSION" where "VERSION" will actually be something like "wool" or "plainborder" or whatever other variant has been enabled (see the following section for details about this)
 
-# Using custom textures
+# Specifying custom properties
 In the .dat file of each mesh you'll find something like this:
 
     return {
@@ -111,6 +116,8 @@ For example, here we remove all but the "plain" version and add a custom one:
     }
 
 Have a look at "wool-72.png" to see where each color goes, or use the included [textures-72.xcf](/textures/textures-72.xcf) file (GIMP format) which has layers for adding the borders as well.
+
+You can as well override any property you would normally pass to node_register(), such as "walkable", "groups", "collision_box", "selection_box" and so forth. The only property that doesn't get really overridden but just "mangled" according to the variants is the "description" one. You shouldn't even be overriding "tiles" cause they will be built according to the "variants" property (which is specific to this mod).
 
 A couple considerations:
 - the bottom-right transparent area never gets used

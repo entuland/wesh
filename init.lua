@@ -219,28 +219,29 @@ function wesh.on_receive_fields(player, formname, fields)
 		canvas.node = minetest.get_node_or_nil(canvas.pos)
 		if not canvas.node then return end
 
-		local canv_size = canvas.node.name:gsub(".*(%d%d)$", "%1")
-		if not canv_size then canv_size = 16 end
-
-		canv_size = tonumber(canv_size)
-		if canv_size ~= 2 and canv_size ~= 4 and canv_size ~= 8 and canv_size ~= 32 then
-			canv_size = 16
+		canvas.size = canvas.node.name:gsub(".*(%d%d)$", "%1")
+		canvas.size = tonumber(canvas.size)
+		local valid = { [2] = true, [4] = true, [8] = true, [32] = true}
+		if not valid[canvas.size] then
+			canvas.size = 16
 		end
 
-		wesh.save_new_mesh(canvas.pos, canv_size, canvas.facedir, player, fields.meshname)
+		canvas.collision = {}
+		wesh.save_new_mesh(canvas, player, fields.meshname)
 	end
 end
 
-function wesh.save_new_mesh(canvas_pos, canv_size, facedir, player, description)
+function wesh.save_new_mesh(canvas, player, description)
+
 	-- empty all helper variables
-	wesh._reset_geometry(canv_size)
+	wesh._reset_geometry(canvas.size)
 	
 	-- read all nodes from the canvas space in the world
 	-- extract the colors and put them into a helper matrix of color voxels
-	wesh.traverse_matrix(wesh.node_to_voxel, canv_size, canv_size, canvas_pos, facedir)
+	wesh.traverse_matrix(wesh.node_to_voxel, canvas.size, canvas)
 	
 	-- generate faces according to voxels
-	wesh.traverse_matrix(wesh.voxel_to_faces, canv_size, canv_size)
+	wesh.traverse_matrix(wesh.voxel_to_faces, canvas.size, canvas)
 	
 	-- this will be the actual content of the .obj file
 	local vt_section = wesh.vertex_textures
@@ -249,14 +250,14 @@ function wesh.save_new_mesh(canvas_pos, canv_size, facedir, player, description)
 	local f_section = table.concat(wesh.faces, "\n")
 	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
-	wesh.save_mesh_to_file(meshdata, description, player)
+	wesh.save_mesh_to_file(meshdata, description, player, canvas)
 end
 
 -- ========================================================================
 -- mesh management helpers
 -- ========================================================================
 
-function wesh.save_mesh_to_file(meshdata, description, player)
+function wesh.save_mesh_to_file(meshdata, description, player, canvas)
 	local sanitized_meshname = wesh.check_plain(description)
 	if sanitized_meshname:len() < 3 then
 		wesh.notify(player, "Mesh name too short, try again (min. 3 chars)")
@@ -289,7 +290,7 @@ function wesh.save_mesh_to_file(meshdata, description, player)
 		wesh.notify(player, "Unable to write to file '" .. data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
 		return
 	end
-	file:write(wesh.prepare_data_file(description))
+	file:write(wesh.prepare_data_file(description, canvas))
 	file:close()
 	
 	-- save .matrix.dat file
@@ -323,7 +324,9 @@ function wesh.get_all_files()
 	return all
 end
 
-function wesh.prepare_data_file(description)
+function wesh.prepare_data_file(description, canvas)
+	local min = canvas.collision.min
+	local max = canvas.collision.max
 	local output = [[
 return {
 	description = ]] .. ("%q"):format(description) .. [[,
@@ -332,6 +335,15 @@ return {
 		plainborder = "plain-border-72.png",
 		wool = "wool-72.png",
 		woolborder = "wool-border-72.png",
+	},
+	collision_box = {
+		type = "fixed",
+		fixed = {
+			{ 
+				]] .. min.x .. [[, ]] .. min.y .. [[, ]] .. min.z .. [[,   
+				]] .. max.x .. [[, ]] .. max.y .. [[, ]] .. max.z .. [[,   
+			},
+		}
 	},
 }
 ]]
@@ -371,7 +383,7 @@ function wesh._load_mesh(obj_filename)
 	local nodename = obj_filename:gsub("[^%w]+", "_"):gsub("_obj", "")
 	
 	for variant, tile in pairs(variants) do
-		minetest.register_node("wesh:" .. nodename .. "_" .. variant, {
+		local props = {
 			drawtype = "mesh",
 			mesh = obj_filename,
 			paramtype2 = "facedir",
@@ -379,13 +391,47 @@ function wesh._load_mesh(obj_filename)
 			tiles = { tile },
 			walkable = true,
 			groups = { dig_immediate = 3 },
-		})
+		}
+		for prop, value in pairs(data) do
+			if prop ~= "variants" and prop ~= "description" then
+				props[prop] = value
+			end
+		end
+		if props.collision_box and not props.selection_box then
+			props.selection_box = props.collision_box
+		end
+		minetest.register_node("wesh:" .. nodename .. "_" .. variant, props)
 	end
 end
 
 -- ========================================================================
 -- mesh generation helpers
 -- ========================================================================
+
+function wesh.update_collision_bounds(rel_pos, canvas)
+	local min = {}
+	local max = {}
+	min.x = (rel_pos.x - 1) / canvas.size - 0.5
+	min.y = (rel_pos.y - 1) / canvas.size - 0.5
+	min.z = (rel_pos.z - 1) / canvas.size - 0.5
+	max.x = rel_pos.x / canvas.size - 0.5
+	max.y = rel_pos.y / canvas.size - 0.5
+	max.z = rel_pos.z / canvas.size - 0.5
+	if not canvas.collision.min then 
+		canvas.collision.min = min
+	else
+		canvas.collision.min.x = math.min(min.x, canvas.collision.min.x)
+		canvas.collision.min.y = math.min(min.y, canvas.collision.min.y)
+		canvas.collision.min.z = math.min(min.z, canvas.collision.min.z)
+	end
+	if not canvas.collision.max then 
+		canvas.collision.max = max
+	else
+		canvas.collision.max.x = math.max(max.x, canvas.collision.max.x)
+		canvas.collision.max.y = math.max(max.y, canvas.collision.max.y)
+		canvas.collision.max.z = math.max(max.z, canvas.collision.max.z)
+	end
+end
 
 function wesh.construct_face(rel_pos, canv_size, texture_vertices, facename, vertices, normal_index)
 	local normal = wesh.face_normals[normal_index]
@@ -443,18 +489,21 @@ function wesh.transform(facedir, pos)
 	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
 end
 
-function wesh.node_to_voxel(rel_pos, canv_size, canvas_pos, facedir)
-	local abs_pos = wesh.make_absolute(canvas_pos, canv_size, facedir, rel_pos)
+function wesh.node_to_voxel(rel_pos, canvas)
+	local abs_pos = wesh.make_absolute(canvas.pos, canvas.size, canvas.facedir, rel_pos)
 	local color = wesh.get_node_color(abs_pos)
+	if color ~= "air" then
+		wesh.update_collision_bounds(rel_pos, canvas)
+	end
 	wesh.set_voxel_color(rel_pos, color)
 end
 
-function wesh.voxel_to_faces(rel_pos, canv_size)
+function wesh.voxel_to_faces(rel_pos, canvas)
 	local color = wesh.get_voxel_color(rel_pos)
 	if color == "air" then return end
 	for facename, facedata in pairs(wesh.face_construction) do
 		local texture_vertices = wesh.get_texture_vertices(color)
-		wesh.construct_face(rel_pos, canv_size, texture_vertices, facename, facedata.vertices, facedata.normal)		
+		wesh.construct_face(rel_pos, canvas.size, texture_vertices, facename, facedata.vertices, facedata.normal)		
 	end
 end
 
