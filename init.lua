@@ -226,7 +226,7 @@ function wesh.on_receive_fields(player, formname, fields)
 			canvas.size = 16
 		end
 
-		canvas.collision = {}
+		canvas.boundary = {}
 		wesh.save_new_mesh(canvas, player, fields.meshname)
 	end
 end
@@ -238,8 +238,12 @@ function wesh.save_new_mesh(canvas, player, description)
 	
 	-- read all nodes from the canvas space in the world
 	-- extract the colors and put them into a helper matrix of color voxels
+	-- generate primary boundary
 	wesh.traverse_matrix(wesh.node_to_voxel, canvas.size, canvas)
-	
+
+	-- generate secondary boundaries
+	wesh.generate_secondary_boundaries(canvas)
+		
 	-- generate faces according to voxels
 	wesh.traverse_matrix(wesh.voxel_to_faces, canvas.size, canvas)
 	
@@ -251,6 +255,15 @@ function wesh.save_new_mesh(canvas, player, description)
 	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
 	wesh.save_mesh_to_file(meshdata, description, player, canvas)
+end
+
+function wesh.generate_secondary_boundaries(canvas)
+	canvas.boundaries = wesh.split_boundary(canvas.boundary, "x")
+	canvas.boxes = {}
+	for index, boundary in ipairs(canvas.boundaries) do
+		canvas.boxes[index] = {}
+		wesh.traverse_matrix(wesh.update_secondary_collision_box, boundary, canvas.boxes[index])
+	end
 end
 
 -- ========================================================================
@@ -325,8 +338,8 @@ function wesh.get_all_files()
 end
 
 function wesh.prepare_data_file(description, canvas)
-	local min = canvas.collision.min
-	local max = canvas.collision.max
+	local min = canvas.boundary.min
+	local max = canvas.boundary.max
 	local output = [[
 return {
 	description = ]] .. ("%q"):format(description) .. [[,
@@ -339,15 +352,36 @@ return {
 	collision_box = {
 		type = "fixed",
 		fixed = {
-			{ 
-				]] .. min.x .. [[, ]] .. min.y .. [[, ]] .. min.z .. [[,   
-				]] .. max.x .. [[, ]] .. max.y .. [[, ]] .. max.z .. [[,   
-			},
+]]
+	
+	for _, box in ipairs(canvas.boxes) do
+		output = output .. wesh.box_to_collision_box(box, canvas.size)
+	end
+	
+	return output .. [[
 		}
 	},
 }
 ]]
-	return output
+end
+
+function wesh.box_to_collision_box(box, size)
+	if not box or not box.min or not box.max then return "" end
+	local s = 1 / size
+	
+	local min = vector.subtract(box.min, 1)
+	min = vector.multiply(min, s)
+	min = vector.subtract(min, 0.5)
+	
+	local max = vector.add(box.max, 0)
+	max = vector.multiply(max, s)
+	max = vector.subtract(max, 0.5)
+	return [[
+			{ 
+				]] .. min.x .. [[, ]] .. min.y .. [[, ]] .. min.z .. [[,   
+				]] .. max.x .. [[, ]] .. max.y .. [[, ]] .. max.z .. [[,   
+			},
+]]
 end
 
 function wesh._move_temp_files()
@@ -408,31 +442,6 @@ end
 -- mesh generation helpers
 -- ========================================================================
 
-function wesh.update_collision_bounds(rel_pos, canvas)
-	local min = {}
-	local max = {}
-	min.x = (rel_pos.x - 1) / canvas.size - 0.5
-	min.y = (rel_pos.y - 1) / canvas.size - 0.5
-	min.z = (rel_pos.z - 1) / canvas.size - 0.5
-	max.x = rel_pos.x / canvas.size - 0.5
-	max.y = rel_pos.y / canvas.size - 0.5
-	max.z = rel_pos.z / canvas.size - 0.5
-	if not canvas.collision.min then 
-		canvas.collision.min = min
-	else
-		canvas.collision.min.x = math.min(min.x, canvas.collision.min.x)
-		canvas.collision.min.y = math.min(min.y, canvas.collision.min.y)
-		canvas.collision.min.z = math.min(min.z, canvas.collision.min.z)
-	end
-	if not canvas.collision.max then 
-		canvas.collision.max = max
-	else
-		canvas.collision.max.x = math.max(max.x, canvas.collision.max.x)
-		canvas.collision.max.y = math.max(max.y, canvas.collision.max.y)
-		canvas.collision.max.z = math.max(max.z, canvas.collision.max.z)
-	end
-end
-
 function wesh.construct_face(rel_pos, canv_size, texture_vertices, facename, vertices, normal_index)
 	local normal = wesh.face_normals[normal_index]
 	local hider_pos = vector.add(rel_pos, normal)
@@ -489,11 +498,77 @@ function wesh.transform(facedir, pos)
 	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
 end
 
+function wesh.update_collision_box(rel_pos, box)
+	if not box.min then
+		box.min = rel_pos
+	else
+		box.min = wesh.axis_min(box.min, rel_pos)
+	end
+	if not box.max then
+		box.max = rel_pos
+	else
+		box.max = wesh.axis_max(box.max, rel_pos)
+	end
+end
+
+function wesh.nested_copy(something)
+    local result = {}
+    for key, value in pairs(something) do
+        if type(value) == 'table' then
+            value = wesh.nested_copy(value)
+        end
+        result[key] = value
+    end
+    return result
+end
+
+function wesh.merge_tables(t1, t2)
+	for _, value in pairs(t2) do 
+		table.insert(t1, value)
+	end
+end
+
+function wesh.split_boundary(boundary, axis)
+	local boundaries = {}
+	local span = boundary.max[axis] - boundary.min[axis]
+	local next_axis = nil
+	if axis == "x" then
+		next_axis = "y"
+	elseif axis == "y" then
+		next_axis = "z"
+	end
+	if span > 0 then
+		local limit = math.ceil(span / 2)
+		local sub_one = wesh.nested_copy(boundary)
+		sub_one.max[axis] = limit
+		local sub_two = wesh.nested_copy(boundary)
+		sub_two.min[axis] = limit + 1
+		if next_axis then
+			wesh.merge_tables(boundaries, wesh.split_boundary(sub_one, next_axis))		
+			wesh.merge_tables(boundaries, wesh.split_boundary(sub_two, next_axis))
+		else
+			table.insert(boundaries, sub_one)
+			table.insert(boundaries, sub_two)
+		end
+	elseif next_axis then
+		wesh.merge_tables(boundaries, wesh.split_boundary(boundary, next_axis))
+	else
+		table.insert(boundaries, boundary)
+	end
+	return boundaries
+end
+
+function wesh.update_secondary_collision_box(rel_pos, box)
+	if wesh.get_voxel_color(rel_pos) ~= "air" then
+		wesh.update_collision_box(rel_pos, box)
+	end
+end
+
 function wesh.node_to_voxel(rel_pos, canvas)
 	local abs_pos = wesh.make_absolute(canvas.pos, canvas.size, canvas.facedir, rel_pos)
 	local color = wesh.get_node_color(abs_pos)
 	if color ~= "air" then
-		wesh.update_collision_bounds(rel_pos, canvas)
+		wesh.update_collision_box(rel_pos, canvas.boundary)
 	end
 	wesh.set_voxel_color(rel_pos, color)
 end
@@ -553,9 +628,26 @@ function wesh.normals_to_string()
 	end
 	return output
 end
+
 -- ========================================================================
 -- generic helpers
 -- ========================================================================
+
+function wesh.axis_min(pos1, pos2)
+	local result = {}
+	for axis, value in pairs(pos1) do
+		result[axis] = math.min(value, pos2[axis])
+	end
+	return result
+end
+
+function wesh.axis_max(pos1, pos2)
+	local result = {}
+	for axis, value in pairs(pos1) do
+		result[axis] = math.max(value, pos2[axis])
+	end
+	return result
+end
 
 function wesh.out_of_bounds(pos, canv_size)
 	return pos.x < 1 or pos.x > canv_size
@@ -569,11 +661,21 @@ function wesh.check_plain(text)
 	return text:gsub("[^%w]+", "_"):lower()
 end
 
-function wesh.traverse_matrix(callback, canv_size, ...)
-	for x = 1, canv_size do
-		for y = 1, canv_size do
-			for z = 1, canv_size do
-				callback({x = x, y = y, z = z}, ...)
+function wesh.traverse_matrix(callback, boundary, ...)
+	if type(boundary) == "table" then
+		for x = boundary.min.x, boundary.max.x do
+			for y = boundary.min.y, boundary.max.y do
+				for z = boundary.min.z, boundary.max.z do
+					callback({x = x, y = y, z = z}, ...)
+				end
+			end
+		end
+	else
+		for x = 1, boundary do
+			for y = 1, boundary do
+				for z = 1, boundary do
+					callback({x = x, y = y, z = z}, ...)
+				end
 			end
 		end
 	end
@@ -588,4 +690,3 @@ function wesh.notify(player, message)
 end
 
 wesh._init()
-

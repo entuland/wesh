@@ -77,7 +77,7 @@ Sample of natural terrain capture:
 Collision boxes will be built automatically depending on the extent of your mesh:
 ![Auto collision box](/screenshots/auto-collision-box.png)
 
-Collision boxes are simple cuboids so you cannot create stairs (but you can create slabs, frames, carpets and so forth).
+Up to 8 collision boxes will be created according to the mesh geometry allowing you to create stairs, slabs, frames, carpets and so forth.
 
 Such new blocks can't be crafted (I plan to make sort of a crafting station where you put some material and chose the model you want to craft), so you either need to give them to yourself or to find them in the Creative inventory. All such meshes show up if you filter for either "wesh" or "mesh".
 
