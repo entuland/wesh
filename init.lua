@@ -321,22 +321,6 @@ function wesh.save_mesh_to_file(meshdata, description, player, canvas)
 	wesh.notify(player, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "', reload the world to move them to the mod folder and enable them")
 end
 
-function wesh.get_temp_files()
-	return minetest.get_dir_list(wesh.temp_path, false)
-end
-
-function wesh.get_stored_files()
-	return minetest.get_dir_list(wesh.modpath .. "/models", false)
-end
-
-function wesh.get_all_files()
-	local all = wesh.get_temp_files()
-	for _, entry in pairs(wesh.get_stored_files()) do
-		table.insert(all, entry)
-	end
-	return all
-end
-
 function wesh.prepare_data_file(description, canvas)
 	local min = canvas.boundary.min
 	local max = canvas.boundary.max
@@ -382,6 +366,22 @@ function wesh.box_to_collision_box(box, size)
 				]] .. max.x .. [[, ]] .. max.y .. [[, ]] .. max.z .. [[,   
 			},
 ]]
+end
+
+function wesh.get_temp_files()
+	return minetest.get_dir_list(wesh.temp_path, false)
+end
+
+function wesh.get_stored_files()
+	return minetest.get_dir_list(wesh.modpath .. "/models", false)
+end
+
+function wesh.get_all_files()
+	local all = wesh.get_temp_files()
+	for _, entry in pairs(wesh.get_stored_files()) do
+		table.insert(all, entry)
+	end
+	return all
 end
 
 function wesh._move_temp_files()
@@ -454,132 +454,17 @@ function wesh.construct_face(rel_pos, canv_size, texture_vertices, facename, ver
 	table.insert(wesh.faces, face_line)
 end
 
-function wesh.get_texture_vertices(color)
-	if not wesh.color_vertices[color] then
-		return wesh.color_vertices.air
-	end
-	return wesh.color_vertices[color]
-end
-
-function wesh.set_voxel_color(pos, color)
-	if not wesh.color_vertices[color] then color = "air" end
-	wesh.matrix[pos.x][pos.y][pos.z] = color
-end
-
-function wesh.get_voxel_color(pos)
-	return wesh.matrix[pos.x][pos.y][pos.z]
-end
-
 function wesh.get_node_color(pos)
 	local node = minetest.get_node_or_nil(pos)
 	if not node then return "air" end
 	return wesh.nodename_to_color[node.name] or "air"
 end
 
-function wesh.make_absolute(canvas_pos, canv_size, facedir, relative_pos)
-	-- relative positions range from (1, 1, 1) to (canv_size, canv_size, canv_size)
-
-	-- shift relative to canvas node within canvas space
-	local shifted_pos = {}
-	shifted_pos.y = relative_pos.y - 1
-	shifted_pos.x = relative_pos.x - (canv_size / 2)
-	shifted_pos.z = relative_pos.z
-	
-	-- transform according to canvas facedir
-	local transformed_pos = wesh.transform(facedir, shifted_pos)
-		
-	-- translate to absolute according to canvas position
-	local absolute_pos = vector.add(canvas_pos, transformed_pos)
-		
-	return absolute_pos
-end
-
-function wesh.transform(facedir, pos)
-	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
-end
-
-function wesh.update_collision_box(rel_pos, box)
-	if not box.min then
-		box.min = rel_pos
-	else
-		box.min = wesh.axis_min(box.min, rel_pos)
+function wesh.get_texture_vertices(color)
+	if not wesh.color_vertices[color] then
+		return wesh.color_vertices.air
 	end
-	if not box.max then
-		box.max = rel_pos
-	else
-		box.max = wesh.axis_max(box.max, rel_pos)
-	end
-end
-
-function wesh.nested_copy(something)
-    local result = {}
-    for key, value in pairs(something) do
-        if type(value) == 'table' then
-            value = wesh.nested_copy(value)
-        end
-        result[key] = value
-    end
-    return result
-end
-
-function wesh.merge_tables(t1, t2)
-	for _, value in pairs(t2) do 
-		table.insert(t1, value)
-	end
-end
-
-function wesh.split_boundary(boundary, axis)
-	local boundaries = {}
-	local span = boundary.max[axis] - boundary.min[axis]
-	local next_axis = nil
-	if axis == "x" then
-		next_axis = "y"
-	elseif axis == "y" then
-		next_axis = "z"
-	end
-	if span > 0 then
-		local limit = math.ceil(span / 2)
-		local sub_one = wesh.nested_copy(boundary)
-		sub_one.max[axis] = limit
-		local sub_two = wesh.nested_copy(boundary)
-		sub_two.min[axis] = limit + 1
-		if next_axis then
-			wesh.merge_tables(boundaries, wesh.split_boundary(sub_one, next_axis))		
-			wesh.merge_tables(boundaries, wesh.split_boundary(sub_two, next_axis))
-		else
-			table.insert(boundaries, sub_one)
-			table.insert(boundaries, sub_two)
-		end
-	elseif next_axis then
-		wesh.merge_tables(boundaries, wesh.split_boundary(boundary, next_axis))
-	else
-		table.insert(boundaries, boundary)
-	end
-	return boundaries
-end
-
-function wesh.update_secondary_collision_box(rel_pos, box)
-	if wesh.get_voxel_color(rel_pos) ~= "air" then
-		wesh.update_collision_box(rel_pos, box)
-	end
-end
-
-function wesh.node_to_voxel(rel_pos, canvas)
-	local abs_pos = wesh.make_absolute(canvas.pos, canvas.size, canvas.facedir, rel_pos)
-	local color = wesh.get_node_color(abs_pos)
-	if color ~= "air" then
-		wesh.update_collision_box(rel_pos, canvas.boundary)
-	end
-	wesh.set_voxel_color(rel_pos, color)
-end
-
-function wesh.voxel_to_faces(rel_pos, canvas)
-	local color = wesh.get_voxel_color(rel_pos)
-	if color == "air" then return end
-	for facename, facedata in pairs(wesh.face_construction) do
-		local texture_vertices = wesh.get_texture_vertices(color)
-		wesh.construct_face(rel_pos, canvas.size, texture_vertices, facename, facedata.vertices, facedata.normal)		
-	end
+	return wesh.color_vertices[color]
 end
 
 function wesh.get_vertex_index(pos, canv_size, vertex_number)
@@ -613,18 +498,112 @@ function wesh.get_vertex_index(pos, canv_size, vertex_number)
 	return #wesh.vertices
 end
 
-function wesh.vertices_to_string()
-	local output = ""
-	for i, vertex in ipairs(wesh.vertices) do
-		output = output .. "v " .. vertex.x .. " " .. vertex.y .. " " .. vertex.z .. "\n"
+function wesh.get_voxel_color(pos)
+	return wesh.matrix[pos.x][pos.y][pos.z]
+end
+
+function wesh.make_absolute(canvas_pos, canv_size, facedir, relative_pos)
+	-- relative positions range from (1, 1, 1) to (canv_size, canv_size, canv_size)
+
+	-- shift relative to canvas node within canvas space
+	local shifted_pos = {}
+	shifted_pos.y = relative_pos.y - 1
+	shifted_pos.x = relative_pos.x - (canv_size / 2)
+	shifted_pos.z = relative_pos.z
+	
+	-- transform according to canvas facedir
+	local transformed_pos = wesh.transform(facedir, shifted_pos)
+		
+	-- translate to absolute according to canvas position
+	local absolute_pos = vector.add(canvas_pos, transformed_pos)
+		
+	return absolute_pos
+end
+
+function wesh.set_voxel_color(pos, color)
+	if not wesh.color_vertices[color] then color = "air" end
+	wesh.matrix[pos.x][pos.y][pos.z] = color
+end
+
+function wesh.split_boundary(boundary, axis)
+	local boundaries = {}
+	local span = boundary.max[axis] - boundary.min[axis]
+	local next_axis = nil
+	if axis == "x" then
+		next_axis = "y"
+	elseif axis == "y" then
+		next_axis = "z"
 	end
-	return output
+	if span > 0 then
+		local limit = math.ceil(span / 2)
+		local sub_one = wesh.nested_copy(boundary)
+		sub_one.max[axis] = limit
+		local sub_two = wesh.nested_copy(boundary)
+		sub_two.min[axis] = limit + 1
+		if next_axis then
+			wesh.merge_tables(boundaries, wesh.split_boundary(sub_one, next_axis))		
+			wesh.merge_tables(boundaries, wesh.split_boundary(sub_two, next_axis))
+		else
+			table.insert(boundaries, sub_one)
+			table.insert(boundaries, sub_two)
+		end
+	elseif next_axis then
+		wesh.merge_tables(boundaries, wesh.split_boundary(boundary, next_axis))
+	else
+		table.insert(boundaries, boundary)
+	end
+	return boundaries
+end
+
+function wesh.node_to_voxel(rel_pos, canvas)
+	local abs_pos = wesh.make_absolute(canvas.pos, canvas.size, canvas.facedir, rel_pos)
+	local color = wesh.get_node_color(abs_pos)
+	if color ~= "air" then
+		wesh.update_collision_box(rel_pos, canvas.boundary)
+	end
+	wesh.set_voxel_color(rel_pos, color)
 end
 
 function wesh.normals_to_string()
 	local output = ""
 	for i, normal in ipairs(wesh.face_normals) do
 		output = output .. "vn " .. normal.x .. " " .. normal.y .. " " .. normal.z .. "\n"
+	end
+	return output
+end
+
+function wesh.update_collision_box(rel_pos, box)
+	if not box.min then
+		box.min = rel_pos
+	else
+		box.min = wesh.axis_min(box.min, rel_pos)
+	end
+	if not box.max then
+		box.max = rel_pos
+	else
+		box.max = wesh.axis_max(box.max, rel_pos)
+	end
+end
+
+function wesh.update_secondary_collision_box(rel_pos, box)
+	if wesh.get_voxel_color(rel_pos) ~= "air" then
+		wesh.update_collision_box(rel_pos, box)
+	end
+end
+
+function wesh.voxel_to_faces(rel_pos, canvas)
+	local color = wesh.get_voxel_color(rel_pos)
+	if color == "air" then return end
+	for facename, facedata in pairs(wesh.face_construction) do
+		local texture_vertices = wesh.get_texture_vertices(color)
+		wesh.construct_face(rel_pos, canvas.size, texture_vertices, facename, facedata.vertices, facedata.normal)		
+	end
+end
+
+function wesh.vertices_to_string()
+	local output = ""
+	for i, vertex in ipairs(wesh.vertices) do
+		output = output .. "v " .. vertex.x .. " " .. vertex.y .. " " .. vertex.z .. "\n"
 	end
 	return output
 end
@@ -649,16 +628,45 @@ function wesh.axis_max(pos1, pos2)
 	return result
 end
 
+function wesh.check_plain(text)
+	if type(text) ~= "string" then return "" end
+	text = text:gsub("^[^%w]*(.-)[^%w]*$", "%1")
+	return text:gsub("[^%w]+", "_"):lower()
+end
+
+function wesh.merge_tables(t1, t2)
+	for _, value in pairs(t2) do 
+		table.insert(t1, value)
+	end
+end
+
+function wesh.nested_copy(something)
+    local result = {}
+    for key, value in pairs(something) do
+        if type(value) == 'table' then
+            value = wesh.nested_copy(value)
+        end
+        result[key] = value
+    end
+    return result
+end
+
+function wesh.notify(player, message)
+	local formspec = "size[10,5]textarea[1,1;8,3;notice;Notice;" .. minetest.formspec_escape(message) .. "]"
+					.. "button_exit[6,4;3,0;exit;Okay]"
+	local playername = player:get_player_name()
+	minetest.show_formspec(playername, "notice_form", formspec)
+	minetest.chat_send_player(playername, "[" .. wesh.name .. "] " .. message)
+end
+
 function wesh.out_of_bounds(pos, canv_size)
 	return pos.x < 1 or pos.x > canv_size
 		or pos.y < 1 or pos.y > canv_size
 		or pos.z < 1 or pos.z > canv_size
 end
 
-function wesh.check_plain(text)
-	if type(text) ~= "string" then return "" end
-	text = text:gsub("^[^%w]*(.-)[^%w]*$", "%1")
-	return text:gsub("[^%w]+", "_"):lower()
+function wesh.transform(facedir, pos)
+	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
 end
 
 function wesh.traverse_matrix(callback, boundary, ...)
@@ -679,14 +687,6 @@ function wesh.traverse_matrix(callback, boundary, ...)
 			end
 		end
 	end
-end
-
-function wesh.notify(player, message)
-	local formspec = "size[10,5]textarea[1,1;8,3;notice;Notice;" .. minetest.formspec_escape(message) .. "]"
-					.. "button_exit[6,4;3,0;exit;Okay]"
-	local playername = player:get_player_name()
-	minetest.show_formspec(playername, "notice_form", formspec)
-	minetest.chat_send_player(playername, "[" .. wesh.name .. "] " .. message)
 end
 
 wesh._init()
