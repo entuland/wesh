@@ -420,6 +420,8 @@ function wesh._load_mesh(obj_filename)
 		local props = {
 			drawtype = "mesh",
 			mesh = obj_filename,
+			paramtype = "light",
+			sunlight_propagates = true,
 			paramtype2 = "facedir",
 			description = description .. " (" .. variant .. ")",
 			tiles = { tile },
