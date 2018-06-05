@@ -46,7 +46,7 @@ function wesh._register_canvas_nodes()
 			on_rightclick = wesh.canvas_interaction,
 			description = "Woolen Mesh Canvas - Size " .. size,
 			walkable = true,
-			groups = { dig_immediate = 3 },
+			groups = { snappy = 2, choppy = 2, oddly_breakable_by_hand = 3 },
 		})
 	end
 	
@@ -413,7 +413,7 @@ function wesh._load_mesh(obj_filename)
 			description = description .. " (" .. variant .. ")",
 			tiles = { tile },
 			walkable = true,
-			groups = { dig_immediate = 3 },
+			groups = { snappy = 2, choppy = 2, oddly_breakable_by_hand = 3 },
 		}
 		for prop, value in pairs(data) do
 			if prop ~= "variants" and prop ~= "description" then
