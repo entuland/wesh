@@ -22,10 +22,10 @@ function wesh._init()
 	wesh._init_geometry()
 	wesh._move_temp_files()
 	wesh._load_mod_meshes()
-	wesh._main_bindings()
+	wesh._register_canvas_nodes()
 end
 
-function wesh._main_bindings()
+function wesh._register_canvas_nodes()
 	minetest.register_on_player_receive_fields(wesh.on_receive_fields)
 
 	local function register_canvas(size, ingot)
@@ -58,8 +58,9 @@ function wesh._main_bindings()
 	minetest.register_alias("wesh:canvas", "wesh:canvas16")
 end
 
--- creates a 4x4 grid of UV mappings, each with a margin of one pixel
 function wesh._init_vertex_textures()
+	-- creates a 4x4 grid of UV mappings, each with a margin of one pixel
+	-- will be used by the .OBJ file generator
 	local vt = ""
 	local space = wesh.vt_size / 4
 	local tile = space - 2
@@ -206,8 +207,8 @@ end
 -- core functions
 -- ========================================================================
 
--- called when the player right-clicks on a canvas block
 function wesh.canvas_interaction(clicked_pos, node, clicker)
+	-- called when the player right-clicks on a canvas block
 	wesh.player_canvas[clicker:get_player_name()] = { pos = clicked_pos, facedir = node.param2 };
 	local formspec = "field[meshname;Enter the name for your mesh;]field_close_on_enter[meshname;false]"
 	minetest.show_formspec(clicker:get_player_name(), "save_mesh", formspec)
@@ -255,15 +256,6 @@ function wesh.save_new_mesh(canvas, player, description)
 	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
 	wesh.save_mesh_to_file(meshdata, description, player, canvas)
-end
-
-function wesh.generate_secondary_boundaries(canvas)
-	canvas.boundaries = wesh.split_boundary(canvas.boundary, "x")
-	canvas.boxes = {}
-	for index, boundary in ipairs(canvas.boundaries) do
-		canvas.boxes[index] = {}
-		wesh.traverse_matrix(wesh.update_secondary_collision_box, boundary, canvas.boxes[index])
-	end
 end
 
 -- ========================================================================
@@ -338,6 +330,8 @@ return {
 		fixed = {
 ]]
 	
+	wesh.merge_collision_boxes(canvas)
+	
 	for _, box in ipairs(canvas.boxes) do
 		output = output .. wesh.box_to_collision_box(box, canvas.size)
 	end
@@ -346,25 +340,6 @@ return {
 		}
 	},
 }
-]]
-end
-
-function wesh.box_to_collision_box(box, size)
-	if not box or not box.min or not box.max then return "" end
-	local s = 1 / size
-	
-	local min = vector.subtract(box.min, 1)
-	min = vector.multiply(min, s)
-	min = vector.subtract(min, 0.5)
-	
-	local max = vector.add(box.max, 0)
-	max = vector.multiply(max, s)
-	max = vector.subtract(max, 0.5)
-	return [[
-			{ 
-				]] .. min.x .. [[, ]] .. min.y .. [[, ]] .. min.z .. [[,   
-				]] .. max.x .. [[, ]] .. max.y .. [[, ]] .. max.z .. [[,   
-			},
 ]]
 end
 
@@ -439,6 +414,164 @@ function wesh._load_mesh(obj_filename)
 		minetest.register_node("wesh:" .. nodename .. "_" .. variant, props)
 	end
 end
+
+-- ========================================================================
+-- collision box computers
+-- ========================================================================
+
+function wesh.box_to_collision_box(box, size)
+	-- transform integral values of the box to the -0.5 ~ 0.5 range
+	-- and return its string representation
+	
+	local subvoxel = 1 / size
+	
+	local min = vector.subtract(box.min, 1)
+	min = vector.multiply(min, subvoxel)
+	min = vector.subtract(min, 0.5)
+	
+	local max = vector.add(box.max, 0)
+	max = vector.multiply(max, subvoxel)
+	max = vector.subtract(max, 0.5)
+	return [[
+			{ 
+				]] .. min.x .. [[, ]] .. min.y .. [[, ]] .. min.z .. [[,   
+				]] .. max.x .. [[, ]] .. max.y .. [[, ]] .. max.z .. [[,   
+			},
+]]
+end
+
+function wesh.generate_secondary_boundaries(canvas)
+	-- split_boundary calls itself recursively and splits over the three axes in sequence
+	canvas.boundaries = wesh.split_boundary(canvas.boundary, "x")
+	
+	-- boundaries will get converted to boxes with integral values and shrunk if necessary
+	canvas.boxes = {}
+	for index, boundary in ipairs(canvas.boundaries) do
+		canvas.boxes[index] = {}
+		wesh.traverse_matrix(wesh.update_secondary_collision_box, boundary, canvas.boxes[index])
+	end
+end
+
+function wesh.merge_collision_boxes(canvas)
+	-- merge collision boxes back if they fall within a relative treshold
+
+	local unmergeable = {}
+	local boxes = {}
+	local treshold = math.floor(canvas.size / 4)
+
+	-- remove all empty boxes
+	for _, box in ipairs(canvas.boxes) do
+		if box.min then
+			table.insert(boxes, box)
+		end
+	end
+
+	-- repeatedly iterate over boxes comparing the first to remaining ones
+	while #boxes > 1 do
+		local a = boxes[1]
+		local merged = false
+		for i = 2, #boxes do
+			local b = boxes[i]
+				-- if appropriate, remove and merge pairs together appending resulting box to the table
+			if wesh.mergeable_boxes(a, b, treshold) then
+				table.insert(boxes, {
+					min = wesh.axis_min(a.min, b.min),
+					max = wesh.axis_max(a.max, b.max),
+				})
+				table.remove(boxes, i)
+				table.remove(boxes, 1)
+				merged = true;
+				break
+			end
+		end
+		if not merged then
+			table.insert(unmergeable, boxes[1])
+			table.remove(boxes, 1)
+		end
+	end
+	
+	for _, v in ipairs(unmergeable) do
+		table.insert(boxes, v)
+	end
+	canvas.boxes = boxes;
+end
+
+function wesh.mergeable_boxes(a, b, treshold)
+	-- check if boxes are aligned independently on each axis
+	local align_x = math.abs(a.min.x - b.min.x) <= treshold and math.abs(a.max.x - b.max.x) <= treshold
+	local align_y = math.abs(a.min.y - b.min.y) <= treshold and math.abs(a.max.y - b.max.y) <= treshold
+	local align_z = math.abs(a.min.z - b.min.z) <= treshold and math.abs(a.max.z - b.max.z) <= treshold
+	
+	-- increase treshold by one to arrange for 2x2x2 corner case with treshold set to zero
+	treshold = treshold + 1
+	
+	-- check if spacing between boxes along independent axes is smaller than given treshold
+	local close_x = math.abs(a.min.x - b.max.x) <= treshold or  math.abs(b.min.x - a.max.x) <= treshold 
+	local close_y = math.abs(a.min.y - b.max.y) <= treshold or  math.abs(b.min.y - a.max.y) <= treshold 
+	local close_z = math.abs(a.min.z - b.max.z) <= treshold or  math.abs(b.min.z - a.max.z) <= treshold 
+	
+	-- return true only if the boxes are aligned on two axes and close together on the third one
+	return align_x and align_y and close_z
+		or align_y and align_z and close_x
+		or align_z and align_x and close_y
+end
+
+function wesh.split_boundary(boundary, axis)
+	-- split the boundary in half over each axis recursively
+	-- this can result in up to 8 secondary boundaries
+
+	local boundaries = {}
+	local span = boundary.max[axis] - boundary.min[axis]
+	local next_axis = nil
+	if axis == "x" then
+		next_axis = "y"
+	elseif axis == "y" then
+		next_axis = "z"
+	end
+	if span > 0 then
+		local limit = math.ceil(span / 2)
+		local sub_one = wesh.nested_copy(boundary)
+		sub_one.max[axis] = limit
+		local sub_two = wesh.nested_copy(boundary)
+		sub_two.min[axis] = limit + 1
+		if next_axis then
+			wesh.merge_tables(boundaries, wesh.split_boundary(sub_one, next_axis))		
+			wesh.merge_tables(boundaries, wesh.split_boundary(sub_two, next_axis))
+		else
+			table.insert(boundaries, sub_one)
+			table.insert(boundaries, sub_two)
+		end
+	elseif next_axis then
+		wesh.merge_tables(boundaries, wesh.split_boundary(boundary, next_axis))
+	else
+		table.insert(boundaries, boundary)
+	end
+	return boundaries
+end
+
+function wesh.update_collision_box(rel_pos, box)
+	-- shrink box boundaries over the three axes separately
+	
+	if not box.min then
+		box.min = rel_pos
+	else
+		box.min = wesh.axis_min(box.min, rel_pos)
+	end
+	if not box.max then
+		box.max = rel_pos
+	else
+		box.max = wesh.axis_max(box.max, rel_pos)
+	end
+end
+
+function wesh.update_secondary_collision_box(rel_pos, box)
+	-- let the box shrink only if the subvoxel isn't empty
+	
+	if wesh.get_voxel_color(rel_pos) ~= "air" then
+		wesh.update_collision_box(rel_pos, box)
+	end
+end
+
 
 -- ========================================================================
 -- mesh generation helpers
@@ -527,36 +660,6 @@ function wesh.set_voxel_color(pos, color)
 	wesh.matrix[pos.x][pos.y][pos.z] = color
 end
 
-function wesh.split_boundary(boundary, axis)
-	local boundaries = {}
-	local span = boundary.max[axis] - boundary.min[axis]
-	local next_axis = nil
-	if axis == "x" then
-		next_axis = "y"
-	elseif axis == "y" then
-		next_axis = "z"
-	end
-	if span > 0 then
-		local limit = math.ceil(span / 2)
-		local sub_one = wesh.nested_copy(boundary)
-		sub_one.max[axis] = limit
-		local sub_two = wesh.nested_copy(boundary)
-		sub_two.min[axis] = limit + 1
-		if next_axis then
-			wesh.merge_tables(boundaries, wesh.split_boundary(sub_one, next_axis))		
-			wesh.merge_tables(boundaries, wesh.split_boundary(sub_two, next_axis))
-		else
-			table.insert(boundaries, sub_one)
-			table.insert(boundaries, sub_two)
-		end
-	elseif next_axis then
-		wesh.merge_tables(boundaries, wesh.split_boundary(boundary, next_axis))
-	else
-		table.insert(boundaries, boundary)
-	end
-	return boundaries
-end
-
 function wesh.node_to_voxel(rel_pos, canvas)
 	local abs_pos = wesh.make_absolute(canvas.pos, canvas.size, canvas.facedir, rel_pos)
 	local color = wesh.get_node_color(abs_pos)
@@ -572,25 +675,6 @@ function wesh.normals_to_string()
 		output = output .. "vn " .. normal.x .. " " .. normal.y .. " " .. normal.z .. "\n"
 	end
 	return output
-end
-
-function wesh.update_collision_box(rel_pos, box)
-	if not box.min then
-		box.min = rel_pos
-	else
-		box.min = wesh.axis_min(box.min, rel_pos)
-	end
-	if not box.max then
-		box.max = rel_pos
-	else
-		box.max = wesh.axis_max(box.max, rel_pos)
-	end
-end
-
-function wesh.update_secondary_collision_box(rel_pos, box)
-	if wesh.get_voxel_color(rel_pos) ~= "air" then
-		wesh.update_collision_box(rel_pos, box)
-	end
 end
 
 function wesh.voxel_to_faces(rel_pos, canvas)
