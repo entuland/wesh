@@ -10,7 +10,7 @@ WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
 # Canvas recipes
 
     W = any wool block
-    I = inner ingredient (see list below
+    I = inner ingredient (see list below)
     
     WWW
     WIW
@@ -29,7 +29,7 @@ WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
 
 You'll most likely end up with a dull gray miniature in the inventory and with a completely transparent node when placed in the world.
 
-This has been added to the mod just to let everybody (in particular the devs, if they're interested) to investigate on the thing.
+This has been added to the mod just to let everybody (in particular the devs, if they're interested to) investigate on the thing.
 
 
 # How to use
