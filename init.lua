@@ -28,7 +28,7 @@ end
 function wesh._register_canvas_nodes()
 	minetest.register_on_player_receive_fields(wesh.on_receive_fields)
 
-	local function register_canvas(size, inner)
+	local function register_canvas(index, size, inner)
 		minetest.register_craft({
 			output = "wesh:canvas" .. size,
 			recipe = {
@@ -40,6 +40,7 @@ function wesh._register_canvas_nodes()
 		minetest.register_node("wesh:canvas" .. size, {
 			drawtype = "mesh",
 			mesh = "zzz_canvas" .. size .. ".obj",
+			inventory_image = "canvas_inventory.png^[verticalframe:6:" .. (index-1) .. ".png",
 			tiles = { "canvas.png" },
 			paramtype2 = "facedir",
 			on_rightclick = wesh.canvas_interaction,
@@ -50,22 +51,22 @@ function wesh._register_canvas_nodes()
 	end
 	
 	local canvas_sizes = {
-		["02"] = "default:steel_ingot",
-		["04"] = "default:copper_ingot",
-		["08"] = "default:tin_ingot",
-		["16"] = "default:bronze_ingot",
-		["32"] = "default:gold_ingot",
-		["64"] = "default:diamond",
+		{"02", "default:steel_ingot"},
+		{"04", "default:copper_ingot"},
+		{"08", "default:tin_ingot"},
+		{"16", "default:bronze_ingot"},
+		{"32", "default:gold_ingot"},
+		{"64", "default:diamond"},
 	}
 	
 	wesh.valid_canvas_sizes = {}
 	
-	for size, inner in pairs(canvas_sizes) do
+	for index, canvas_data in pairs(canvas_sizes) do
+		local size = canvas_data[1]
+		local inner = canvas_data[2]
 		wesh.valid_canvas_sizes[tonumber(size)] = true
-		register_canvas(size, inner)
+		register_canvas(index, size, inner)
 	end
-	
-	print(dump(wesh.valid_canvas_sizes))
 		
 	minetest.register_alias("wesh:canvas", "wesh:canvas16")
 end
