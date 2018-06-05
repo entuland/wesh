@@ -10,7 +10,7 @@ WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
 # Canvas recipes
 
     W = any wool block
-    I = ingot
+    I = inner ingredient (see list below
     
     WWW
     WIW
@@ -21,8 +21,16 @@ WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
     wesh:canvas08 (tin ingot)
     wesh:canvas16 (bronze ingot) - wesh:canvas gives you wesh:canvas16, kept for compatibility
     wesh:canvas32 (gold ingot)
+    wesh:canvas64 (diamond) read *careful* notice after the screenshot
 
 ![Canvas recipe](/screenshots/canvas-recipe.png)
+
+*CAREFUL* the largest canvas size may hang your game and crash it! Even if it doesn't crash it will most likely produce a mesh that the game isn't able to deal with!
+
+You'll most likely end up with a dull gray miniature in the inventory and with a completely transparent node when placed in the world.
+
+This has been added to the mod just to let everybody (in particular the devs, if they're interested) to investigate on the thing.
+
 
 # How to use
 Place down a Canvas block, you'll see that it extends beyond its node space marking a cube (available in sizes 2, 4, 8, 16 and 32)
@@ -77,7 +85,7 @@ Sample of natural terrain capture:
 Collision boxes will be built automatically depending on the extent of your mesh:
 ![Auto collision box](/screenshots/auto-collision-box.png)
 
-Up to 8 collision boxes will be created according to the mesh geometry allowing you to create stairs, slabs, frames, carpets and so forth.
+Up to 8 collision boxes will be created according to the mesh geometry allowing you to create stairs, slabs, frames, carpets and so forth, collision boxes will be merged into larger ones when fitting.
 
 Such new blocks can't be crafted (I plan to make sort of a crafting station where you put some material and chose the model you want to craft), so you either need to give them to yourself or to find them in the Creative inventory. All such meshes show up if you filter for either "wesh" or "mesh".
 
