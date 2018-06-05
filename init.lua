@@ -28,12 +28,12 @@ end
 function wesh._register_canvas_nodes()
 	minetest.register_on_player_receive_fields(wesh.on_receive_fields)
 
-	local function register_canvas(size, ingot)
+	local function register_canvas(size, inner)
 		minetest.register_craft({
 			output = "wesh:canvas" .. size,
 			recipe = {
 				{"group:wool", "group:wool", "group:wool"},
-				{"group:wool", "default:" .. ingot .. "_ingot", "group:wool"},
+				{"group:wool", inner, "group:wool"},
 				{"group:wool", "group:wool", "group:wool"},
 			}
 		})
@@ -49,12 +49,24 @@ function wesh._register_canvas_nodes()
 		})
 	end
 	
-	register_canvas("02", "steel")
-	register_canvas("04", "copper")
-	register_canvas("08", "tin")
-	register_canvas("16", "bronze")
-	register_canvas("32", "gold")
+	local canvas_sizes = {
+		["02"] = "default:steel_ingot",
+		["04"] = "default:copper_ingot",
+		["08"] = "default:tin_ingot",
+		["16"] = "default:bronze_ingot",
+		["32"] = "default:gold_ingot",
+		["64"] = "default:diamond",
+	}
 	
+	wesh.valid_canvas_sizes = {}
+	
+	for size, inner in pairs(canvas_sizes) do
+		wesh.valid_canvas_sizes[tonumber(size)] = true
+		register_canvas(size, inner)
+	end
+	
+	print(dump(wesh.valid_canvas_sizes))
+		
 	minetest.register_alias("wesh:canvas", "wesh:canvas16")
 end
 
@@ -222,8 +234,7 @@ function wesh.on_receive_fields(player, formname, fields)
 
 		canvas.size = canvas.node.name:gsub(".*(%d%d)$", "%1")
 		canvas.size = tonumber(canvas.size)
-		local valid = { [2] = true, [4] = true, [8] = true, [32] = true}
-		if not valid[canvas.size] then
+		if not wesh.valid_canvas_sizes[canvas.size] then
 			canvas.size = 16
 		end
 
