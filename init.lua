@@ -140,8 +140,17 @@ function wesh._init_colors()
 	--  The following loop will fill the nodename_to_color table with custom values
 	local file = io.open(wesh.modpath .. "/nodecolors.conf", "rb")
 	if not file then
-		minetest.debug("[wesh] Unable to load nodecolors.conf file from mod folder")
-		return
+		minetest.debug("[wesh] Copying default.nodecolors.conf to nodecolors.conf")
+		local success, err = wesh.copy_file(wesh.modpath .. "/default.nodecolors.conf", wesh.modpath .. "/nodecolors.conf")
+		if not success then
+			minetest.debug("[wesh] " .. err)
+			return
+		end
+		file = io.open(wesh.modpath .. "/nodecolors.conf", "rb")
+		if not file then
+			minetest.debug("[wesh] Unable to load nodecolors.conf file from mod folder")
+			return
+		end
 	end
 
 	local content = file:read("*all")
@@ -730,6 +739,24 @@ function wesh.check_plain(text)
 	if type(text) ~= "string" then return "" end
 	text = text:gsub("^[^%w]*(.-)[^%w]*$", "%1")
 	return text:gsub("[^%w]+", "_"):lower()
+end
+
+
+function wesh.copy_file(source, dest)
+	local src_file = io.open(source, "rb")
+	if not src_file then 
+		return false, "copy_file() unable to open source for reading"
+	end
+	local src_data = src_file:read("*all")
+	src_file:close()
+
+	local dest_file = io.open(dest, "wb")
+	if not dest_file then 
+		return false, "copy_file() unable to open dest for writing"
+	end
+	dest_file:write(src_data)
+	dest_file:close()
+	return true, "files copied successfully"
 end
 
 function wesh.merge_tables(t1, t2)

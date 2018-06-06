@@ -134,4 +134,4 @@ A couple considerations:
 
 # Changing default colors assigned to nodes
 
-The file [nodecolors.conf](/nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. You're free to alter them or to add to this list as you please, just make sure you stick to wool colors cause any invalid color will be replaced by "air".
+The file [default.nodecolors.conf](/default.nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. This file will be copied over to `nodecolors.conf` at startup (if no such file exists); in `nodecolors.conf` you're free to alter existing colors and to add new nodes, just make sure you stick to wool colors cause any invalid color will be replaced by "air". Do not store your changes into `default.nodecolors.conf` cause it will be overwritten updating the mod (and it wouldn't get used anyway if a `nodecolors.conf` file is there at all).
