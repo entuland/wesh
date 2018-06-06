@@ -138,22 +138,27 @@ function wesh._init_colors()
 		end
 	end
 	
-	--  The following loop will fill the nodename_to_color table with custom values
-	local file = io.open(wesh.modpath .. "/nodecolors.conf", "rb")
+	local colors_filename = "nodecolors.conf"
+	local default_colors_filename = "default." .. colors_filename
+	local full_colors_filename = wesh.modpath .. "/" .. colors_filename
+	local full_default_colors_filename = wesh.modpath .. "/" .. default_colors_filename
+	
+	local file = io.open(full_colors_filename, "rb")
 	if not file then
-		minetest.debug("[wesh] Copying default.nodecolors.conf to nodecolors.conf")
-		local success, err = wesh.copy_file(wesh.modpath .. "/default.nodecolors.conf", wesh.modpath .. "/nodecolors.conf")
+		minetest.debug("[wesh] Copying " .. default_colors_filename .. " to " .. colors_filename)
+		local success, err = wesh.copy_file(full_default_colors_filename, full_colors_filename)
 		if not success then
 			minetest.debug("[wesh] " .. err)
 			return
 		end
-		file = io.open(wesh.modpath .. "/nodecolors.conf", "rb")
+		file = io.open(full_colors_filename, "rb")
 		if not file then
-			minetest.debug("[wesh] Unable to load nodecolors.conf file from mod folder")
+			minetest.debug("[wesh] Unable to load " .. colors_filename .. " file from mod folder")
 			return
 		end
 	end
 
+	--  The following loop will fill the nodename_to_color table with custom values
 	local content = file:read("*all")
 	local lines = content:gsub("(\r\n)+", "\r"):gsub("\r+", "\n"):split("\n")
 	for _, line in ipairs(lines) do
@@ -230,16 +235,21 @@ function wesh._init_variants()
 	wesh.variants = {
 		plain = "plain-16.png",
 	}
+	
 	local variants_filename = "nodevariants.lua"
-	local file = io.open(wesh.modpath .. "/" .. variants_filename, "rb")
+	local default_variants_filename = "default." .. variants_filename
+	local full_variants_filename = wesh.modpath .. "/" .. variants_filename
+	local full_default_variants_filename = wesh.modpath .. "/" .. default_variants_filename
+	
+	local file = io.open(full_variants_filename, "rb")
 	if not file then
-		minetest.debug("[wesh] Copying default." .. variants_filename .. " to " .. variants_filename)
-		local success, err = wesh.copy_file(wesh.modpath .. "/default." .. variants_filename, wesh.modpath .. "/" .. variants_filename)
+		minetest.debug("[wesh] Copying " .. default_variants_filename .. " to " .. variants_filename)
+		local success, err = wesh.copy_file(full_default_variants_filename, full_variants_filename)
 		if not success then
 			minetest.debug("[wesh] " .. err)
 			return
 		end
-		file = io.open(wesh.modpath .. "/" .. variants_filename, "rb")
+		file = io.open(full_variants_filename, "rb")
 		if not file then
 			minetest.debug("[wesh] Unable to load " .. variants_filename .. " file from mod folder")
 			return
