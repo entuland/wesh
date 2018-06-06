@@ -288,7 +288,20 @@ function wesh.on_receive_fields(player, formname, fields)
 end
 
 function wesh.save_new_mesh(canvas, player, description)
-
+	local sanitized_meshname = wesh.check_plain(description)
+	if sanitized_meshname:len() < 3 then
+		wesh.notify(player, "Mesh name too short, try again (min. 3 chars)")
+		return
+	end
+	
+	local obj_filename = wesh.gen_prefix .. sanitized_meshname .. ".obj"
+	for _, entry in ipairs(wesh.get_all_files()) do
+		if entry == obj_filename then		
+			wesh.notify(player, "Mesh name '" .. description .. "' already taken, pick a new one")
+			return
+		end
+	end
+	
 	-- empty all helper variables
 	wesh._reset_geometry(canvas.size)
 	
@@ -310,27 +323,14 @@ function wesh.save_new_mesh(canvas, player, description)
 	local f_section = table.concat(wesh.faces, "\n")
 	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
-	wesh.save_mesh_to_file(meshdata, description, player, canvas)
+	wesh.save_mesh_to_file(obj_filename, meshdata, description, player, canvas)
 end
 
 -- ========================================================================
 -- mesh management helpers
 -- ========================================================================
 
-function wesh.save_mesh_to_file(meshdata, description, player, canvas)
-	local sanitized_meshname = wesh.check_plain(description)
-	if sanitized_meshname:len() < 3 then
-		wesh.notify(player, "Mesh name too short, try again (min. 3 chars)")
-		return
-	end
-	
-	local obj_filename = wesh.gen_prefix .. sanitized_meshname .. ".obj"
-	for _, entry in ipairs(wesh.get_all_files()) do
-		if entry == obj_filename then		
-			wesh.notify(player, "Mesh name '" .. description .. "' already taken, pick a new one")
-			return
-		end
-	end
+function wesh.save_mesh_to_file(obj_filename, meshdata, description, player, canvas)
 	
 	-- save .obj file
 	local full_filename = wesh.temp_path .. "/" .. obj_filename
