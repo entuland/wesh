@@ -20,6 +20,7 @@ function wesh._init()
 	wesh._init_vertex_textures()
 	wesh._init_colors()
 	wesh._init_geometry()
+	wesh._init_variants()
 	wesh._move_temp_files()
 	wesh._load_mod_meshes()
 	wesh._register_canvas_nodes()
@@ -225,6 +226,29 @@ function wesh._reset_geometry(canv_size)
 	wesh.traverse_matrix(reset, canv_size)
 end
 
+function wesh._init_variants()
+	wesh.variants = {
+		plain = "plain-16.png",
+	}
+	local variants_filename = "nodevariants.lua"
+	local file = io.open(wesh.modpath .. "/" .. variants_filename, "rb")
+	if not file then
+		minetest.debug("[wesh] Copying default." .. variants_filename .. " to " .. variants_filename)
+		local success, err = wesh.copy_file(wesh.modpath .. "/default." .. variants_filename, wesh.modpath .. "/" .. variants_filename)
+		if not success then
+			minetest.debug("[wesh] " .. err)
+			return
+		end
+		file = io.open(wesh.modpath .. "/" .. variants_filename, "rb")
+		if not file then
+			minetest.debug("[wesh] Unable to load " .. variants_filename .. " file from mod folder")
+			return
+		end
+	end
+	wesh.variants = minetest.deserialize(file:read("*all"))
+	file:close()
+end
+
 -- ========================================================================
 -- core functions
 -- ========================================================================
@@ -335,33 +359,20 @@ function wesh.save_mesh_to_file(meshdata, description, player, canvas)
 end
 
 function wesh.prepare_data_file(description, canvas)
-	local min = canvas.boundary.min
-	local max = canvas.boundary.max
-	local output = [[
-return {
-	description = ]] .. ("%q"):format(description) .. [[,
-	variants = {
-		plain = "plain-16.png",
-		plainborder = "plain-border-72.png",
-		wool = "wool-72.png",
-		woolborder = "wool-border-72.png",
-	},
-	collision_box = {
-		type = "fixed",
-		fixed = {
-]]
-	
-	wesh.merge_collision_boxes(canvas)
-	
+	local boxes = {}
+	wesh.merge_collision_boxes(canvas)	
 	for _, box in ipairs(canvas.boxes) do
-		output = output .. wesh.box_to_collision_box(box, canvas.size)
+		table.insert(boxes, wesh.box_to_collision_box(box, canvas.size))
 	end
-	
-	return output .. [[
+	local data = {
+		description = description,
+		variants = wesh.variants,
+		collision_box = {
+			type = "fixed",
+			fixed = boxes,
 		}
-	},
-}
-]]
+	}
+	return wesh.serialize(data, 2)
 end
 
 function wesh.get_temp_files()
@@ -453,12 +464,7 @@ function wesh.box_to_collision_box(box, size)
 	local max = vector.add(box.max, 0)
 	max = vector.multiply(max, subvoxel)
 	max = vector.subtract(max, 0.5)
-	return [[
-			{ 
-				]] .. min.x .. [[, ]] .. min.y .. [[, ]] .. min.z .. [[,   
-				]] .. max.x .. [[, ]] .. max.y .. [[, ]] .. max.z .. [[,   
-			},
-]]
+	return { min.x, min.y, min.z, max.x, max.y, max.z }
 end
 
 function wesh.generate_secondary_boundaries(canvas)
@@ -780,6 +786,69 @@ end
 
 function wesh.transform(facedir, pos)
 	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
+end
+
+function wesh.serialize(object, max_wrapping)
+	local function helper(obj, max_depth, depth, seen)
+		if not depth then 
+			depth = 0
+		end
+		if not seen then
+			seen = {}
+		end
+		
+		local wrap = max_depth and max_depth > depth or false
+		
+		local out = ""
+		local t = type(obj)
+		if t == nil then
+			return "nil"
+		elseif t == "string"   then
+			return string.format("%q", obj)
+		elseif t == "boolean" then
+			return obj and "true" or "false"
+		elseif t == "number" then
+			if math.floor(obj) == obj then
+				return string.format("%d", obj)
+			else
+				return tostring(obj)
+			end
+		elseif t == "table" then
+			if seen[tostring(obj)] then
+				error("[wesh] serialize(): Cyclic references not supported")
+			end
+			seen[tostring(obj)] = true;
+			
+			local output = "{\n"
+			local post_table = string.rep("\t", depth) .. "}"
+			local pre_key = string.rep("\t", depth + 1)
+			local post_value = ",\n";
+			
+			if not wrap then
+				output = "{ "
+				post_table = "}"
+				pre_key = ""
+				post_value = ", "
+			end
+			
+			for k, v in pairs(obj) do
+				local key = k .. " = "
+				if type(k) == "number" then
+					-- remove numeric indices on purpose
+					key = ""
+				elseif type(k) ~= "string" or k:match("[^%w_]") then
+					error("[wesh] serialize(): Unsupported array key " .. helper(k))
+				end
+				output = output .. pre_key .. key .. helper(v, max_depth, depth + 1, seen) .. post_value 
+			end
+			
+			return output .. post_table
+		else
+			error("[wesh] serialize(): Data type " .. t .. " not supported")
+		end
+	end
+	
+	return "return " .. helper(object, max_wrapping)
 end
 
 function wesh.traverse_matrix(callback, boundary, ...)
