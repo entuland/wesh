@@ -551,9 +551,9 @@ function wesh.split_boundary(boundary, axis)
 	end
 	if span > 0 then
 		local limit = math.ceil(span / 2)
-		local sub_one = wesh.nested_copy(boundary)
+		local sub_one = table.copy(boundary)
 		sub_one.max[axis] = limit
-		local sub_two = wesh.nested_copy(boundary)
+		local sub_two = table.copy(boundary)
 		sub_two.min[axis] = limit + 1
 		if next_axis then
 			wesh.merge_tables(boundaries, wesh.split_boundary(sub_one, next_axis))		
@@ -741,7 +741,6 @@ function wesh.check_plain(text)
 	return text:gsub("[^%w]+", "_"):lower()
 end
 
-
 function wesh.copy_file(source, dest)
 	local src_file = io.open(source, "rb")
 	if not src_file then 
@@ -763,17 +762,6 @@ function wesh.merge_tables(t1, t2)
 	for _, value in pairs(t2) do 
 		table.insert(t1, value)
 	end
-end
-
-function wesh.nested_copy(something)
-    local result = {}
-    for key, value in pairs(something) do
-        if type(value) == 'table' then
-            value = wesh.nested_copy(value)
-        end
-        result[key] = value
-    end
-    return result
 end
 
 function wesh.notify(player, message)
