@@ -261,10 +261,6 @@ function wesh._reset_geometry(canv_size)
 end
 
 function wesh._init_variants()
-	wesh.variants = {
-		plain = "plain-16.png",
-	}
-	
 	local variants_filename = "nodevariants.lua"
 	local default_variants_filename = "default." .. variants_filename
 	local full_variants_filename = wesh.modpath .. "/" .. variants_filename
@@ -284,7 +280,21 @@ function wesh._init_variants()
 			return
 		end
 	end
-	wesh.variants = minetest.deserialize(file:read("*all"))
+
+	local custom_variants = minetest.deserialize(file:read("*all"))	
+	wesh.variants = {
+		plain = "plain-16.png",
+	}
+	
+	-- ensure there is at least one valid variant in the custom variants
+	if custom_variants and type(custom_variants) == "table" then
+		for name, texture in pairs(custom_variants) do
+			if name and type(name) == "string" and texture and type(texture) == "string" then
+				wesh.variants = custom_variants
+				break
+			end
+		end
+	end
 	file:close()
 end
 
