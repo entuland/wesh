@@ -27,8 +27,24 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	meshname_field:setCloseOnEnter(false)
 	
 	local capture_button = state:button(4, 0.2, 2, 1, "capture", "Capture")
-	capture_button:click(wesh.mesh_capture_confirmed)
-	-- capture_button:setClose(true)
+	capture_button:onClick(wesh.mesh_capture_confirmed)
+	
+	-- local delete_button = state:button(4, 3.2, 2, 0, "delete", "Delete\nMeshes")
+	-- delete_button:onClick(function(_, state)
+		-- minetest.after(0, function(playername)
+			-- wesh.forms.delete_meshes:show(playername)
+		-- end, state.player)
+	-- end)
+	-- delete_button:setClose(true)
+	
+	local give_button = state:button(4, 4.2, 2, 0, "give", "Giveme\nMeshes")
+	give_button:onClick(function(_, state)
+		minetest.after(0, function(playername)
+			wesh.forms.giveme_meshes:show(playername)
+		end, state.player)
+	end)
+	give_button:setClose(true)
+	
 	
 	local cancel_button = state:button(4, 5.2, 2, 1, "cancel", "Cancel")
 	cancel_button:setClose(true)
@@ -44,6 +60,39 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 		y = y + 0.5
 	end
 end)
+
+-- wesh.forms.delete_meshes = smartfs.create("wesh.forms.delete_meshes", function(state)
+
+-- end)
+
+wesh.forms.giveme_meshes = smartfs.create("wesh.forms.giveme_meshes", function(state)
+	state:size(6, 6)
+	
+	local stored_obj_files = wesh.filter_non_obj(wesh.get_stored_files())
+
+	local stored_list = state:listbox(0.5, 0.5, 5, 4, "stored_list")	
+	for _, obj_filename in pairs(stored_obj_files) do
+		local data = wesh.get_obj_filedata(obj_filename)
+		if not data.variants then break end
+		for variant, _ in pairs(data.variants) do
+			stored_list:addItem(wesh.create_nodename(obj_filename, variant))
+		end
+	end
+	stored_list:onDoubleClick(wesh.give_mesh_callback)
+
+	local give_button = state:button(0.5, 5.2, 3, 1, "give", "Giveme selected")
+	give_button:onClick(wesh.give_mesh_callback)
+	
+	local done_button = state:button(4, 5.2, 2, 1, "done", "Done")
+	done_button:setClose(true)
+end)
+
+function wesh.give_mesh_callback(_, state)
+	local nodename = state:get("stored_list"):getSelectedItem()
+	local player_inv = minetest.get_player_by_name(state.player):get_inventory()
+	player_inv:add_item("main", {name = nodename, count = 1})
+	wesh.notify(state.player, nodename .. " added to inventory")
+end
 
 -- ========================================================================
 -- initialization functions
@@ -476,6 +525,16 @@ function wesh.get_all_files()
 	return all
 end
 
+function wesh.filter_non_obj(filelist)
+	local list = {}
+	for _, filename in pairs(filelist) do
+		if wesh.is_valid_obj_filename(filename) then
+			table.insert(list, filename)
+		end
+	end
+	return list
+end
+
 function wesh._move_temp_files()
 	local meshes = wesh.get_temp_files()
 	for _, filename in ipairs(meshes) do
@@ -483,30 +542,42 @@ function wesh._move_temp_files()
 	end
 end
 
-function wesh._load_mod_meshes()
-	local meshes = wesh.get_stored_files()
-	for _, filename in ipairs(meshes) do
-		if filename:match("^" .. wesh.gen_prefix .. ".-%.obj$") then
-			wesh._load_mesh(filename)
-		end
-	end
+function wesh.is_valid_obj_filename(obj_filename)
+	return obj_filename:match("^" .. wesh.gen_prefix .. ".-%.obj$")
 end
 
-function wesh._load_mesh(obj_filename)
+function wesh.create_nodename(obj_filename, variant)
+	return "wesh:" .. obj_filename:gsub("[^%w]+", "_"):gsub("_obj", "") .. "_" .. variant 
+end
+
+function wesh.get_obj_filedata(obj_filename)
 	local full_data_filename = wesh.modpath .. "/models/" .. obj_filename .. ".dat"
 	
 	local file = io.open(full_data_filename, "rb")
 	
 	local data = {}
 	if file then
-		data = minetest.deserialize(file:read("*all")) or {}
+		data = minetest.deserialize(file:read("*all"))
+		data = type(data) == "table" and data or {}
 		file:close()
 	end
+	return data
+end
+
+function wesh._load_mod_meshes()
+	local meshes = wesh.get_stored_files()
+	for _, filename in ipairs(meshes) do
+		if wesh.is_valid_obj_filename(filename) then
+			wesh._load_mesh(filename)
+		end
+	end
+end
+
+function wesh._load_mesh(obj_filename)
+	local data = wesh.get_obj_filedata(obj_filename)
 	
 	local description = data.description or "Custom Woolen Mesh"
 	local variants = data.variants or { plain = "plain-16.png" }
-	
-	local nodename = obj_filename:gsub("[^%w]+", "_"):gsub("_obj", "")
 	
 	for variant, tile in pairs(variants) do
 		local props = {
@@ -536,7 +607,8 @@ function wesh._load_mesh(obj_filename)
 			end
 			minetest.item_place(itemstack, placer, pointed_thing)
 		end
-		minetest.register_node("wesh:" .. nodename .. "_" .. variant, props)
+		local nodename = wesh.create_nodename(obj_filename, variant)
+		minetest.register_node(nodename, props)
 	end
 end
 
