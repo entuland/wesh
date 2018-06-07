@@ -3,8 +3,38 @@ wesh = {
 	name = "wesh",
 	modpath = minetest.get_modpath(minetest.get_current_modname()),
 	vt_size = 72,
-	player_canvas = {}
+	player_canvas = {},
+	forms = {},
 }
+
+
+local smartfs = dofile(wesh.modpath .. "/smartfs.lua")
+
+wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
+	state:size(6, 6)
+	
+	local meshname_field = state:field(0.5, 0.5, 4, 1, "meshname", "Enter the name for your mesh")
+	meshname_field:onKeyEnter(wesh.mesh_capture_confirmed)
+	meshname_field:setCloseOnEnter(false)
+	
+	local capture_button = state:button(4, 0.2, 2, 1, "capture", "Capture")
+	capture_button:click(wesh.mesh_capture_confirmed)
+	-- capture_button:setClose(true)
+	
+	local cancel_button = state:button(4, 5.2, 2, 1, "cancel", "Cancel")
+	cancel_button:setClose(true)
+	
+	state:checkbox(0.5, 1, "generate_matrix", "Generate backup matrix")
+	
+	state:label(0.5, 2, "label_variants", "Select one or more variants:")
+	
+	local y = 2.5
+	for name, texture in pairs(wesh.variants) do
+		local chk = state:checkbox(0.5, y, "variant_" .. name, name)
+		chk:setValue(true)
+		y = y + 0.5
+	end
+end)
 
 -- ========================================================================
 -- initialization functions
@@ -15,7 +45,7 @@ function wesh._init()
 	wesh.gen_prefix = "mesh_"
 
 	if not minetest.mkdir(wesh.temp_path) then
-		error("[" .. wesh.name .. "] Unable to create folder " .. wesh.temp_path)
+		error("[wesh] Unable to create folder " .. wesh.temp_path)
 	end
 	wesh._init_vertex_textures()
 	wesh._init_colors()
@@ -27,7 +57,6 @@ function wesh._init()
 end
 
 function wesh._register_canvas_nodes()
-	minetest.register_on_player_receive_fields(wesh.on_receive_fields)
 
 	local function register_canvas(index, size, inner)
 		minetest.register_craft({
@@ -266,39 +295,57 @@ end
 function wesh.canvas_interaction(clicked_pos, node, clicker)
 	-- called when the player right-clicks on a canvas block
 	wesh.player_canvas[clicker:get_player_name()] = { pos = clicked_pos, facedir = node.param2 };
-	local formspec = "field[meshname;Enter the name for your mesh;]field_close_on_enter[meshname;false]"
-	minetest.show_formspec(clicker:get_player_name(), "save_mesh", formspec)
+	wesh.forms.capture:show(clicker:get_player_name())
 end
 
-function wesh.on_receive_fields(player, formname, fields)
-	if formname == "save_mesh" then
-		local canvas = wesh.player_canvas[player:get_player_name()]
-		canvas.node = minetest.get_node_or_nil(canvas.pos)
-		if not canvas.node then return end
-
-		canvas.size = canvas.node.name:gsub(".*(%d%d)$", "%1")
-		canvas.size = tonumber(canvas.size)
-		if not wesh.valid_canvas_sizes[canvas.size] then
-			canvas.size = 16
+function wesh.mesh_capture_confirmed(button_or_field, state)
+	local meshname = state:get("meshname"):getText()
+	local playername = state.player	
+	local canvas = wesh.player_canvas[playername]
+	canvas.generate_matrix = state:get("generate_matrix"):getValue()
+	
+	canvas.chosen_variants = {}
+	
+	local no_variants = true
+	for name, texture in pairs(wesh.variants) do
+		if state:get("variant_" .. name):getValue() then
+			canvas.chosen_variants[name] = texture
+			no_variants = false
 		end
+	end
+	
+	if no_variants then
+		wesh.notify(playername, "Please choose at least one variant")
+		return
+	end
+	
+	canvas.node = minetest.get_node_or_nil(canvas.pos)
+	if not canvas.node then return end
 
-		canvas.boundary = {}
-		wesh.save_new_mesh(canvas, player, fields.meshname)
+	canvas.size = canvas.node.name:gsub(".*(%d%d)$", "%1")
+	canvas.size = tonumber(canvas.size)
+	if not wesh.valid_canvas_sizes[canvas.size] then
+		canvas.size = 16
+	end
+
+	canvas.boundary = {}
+	if wesh.save_new_mesh(canvas, playername, meshname) then
+		minetest.close_formspec(playername, "wesh.forms.capture")
 	end
 end
 
-function wesh.save_new_mesh(canvas, player, description)
+function wesh.save_new_mesh(canvas, playername, description)
 	local sanitized_meshname = wesh.check_plain(description)
 	if sanitized_meshname:len() < 3 then
-		wesh.notify(player, "Mesh name too short, try again (min. 3 chars)")
-		return
+		wesh.notify(playername, "Mesh name too short, try again (min. 3 chars)")
+		return false
 	end
 	
 	local obj_filename = wesh.gen_prefix .. sanitized_meshname .. ".obj"
 	for _, entry in ipairs(wesh.get_all_files()) do
 		if entry == obj_filename then		
-			wesh.notify(player, "Mesh name '" .. description .. "' already taken, pick a new one")
-			return
+			wesh.notify(playername, "Mesh name '" .. description .. "' already taken, pick a new one")
+			return false
 		end
 	end
 	
@@ -323,21 +370,21 @@ function wesh.save_new_mesh(canvas, player, description)
 	local f_section = table.concat(wesh.faces, "\n")
 	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
-	wesh.save_mesh_to_file(obj_filename, meshdata, description, player, canvas)
+	return wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
 end
 
 -- ========================================================================
 -- mesh management helpers
 -- ========================================================================
 
-function wesh.save_mesh_to_file(obj_filename, meshdata, description, player, canvas)
+function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
 	
 	-- save .obj file
 	local full_filename = wesh.temp_path .. "/" .. obj_filename
 	local file, errmsg = io.open(full_filename, "wb")
 	if not file then
-		wesh.notify(player, "Unable to write to file '" .. obj_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
-		return
+		wesh.notify(playername, "Unable to write to file '" .. obj_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+		return false
 	end
 	file:write(meshdata)
 	file:close()
@@ -347,25 +394,27 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, player, can
 	local full_data_filename = wesh.temp_path .. "/" .. data_filename
 	local file, errmsg = io.open(full_data_filename, "wb")
 	if not file then
-		wesh.notify(player, "Unable to write to file '" .. data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
-		return
+		wesh.notify(playername, "Unable to write to file '" .. data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+		return false
 	end
 	file:write(wesh.prepare_data_file(description, canvas))
 	file:close()
 	
-	-- save .matrix.dat file
-	local matrix_data_filename = obj_filename .. ".matrix.dat"
-	local full_matrix_data_filename = wesh.temp_path .. "/" .. matrix_data_filename
-	local file, errmsg = io.open(full_matrix_data_filename, "wb")
-	if not file then
-		wesh.notify(player, "Unable to write to file '" .. matrix_data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
-		return
+	if canvas.generate_matrix then
+		-- save .matrix.dat file
+		local matrix_data_filename = obj_filename .. ".matrix.dat"
+		local full_matrix_data_filename = wesh.temp_path .. "/" .. matrix_data_filename
+		local file, errmsg = io.open(full_matrix_data_filename, "wb")
+		if not file then
+			wesh.notify(playername, "Unable to write to file '" .. matrix_data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+			return false
+		end
+		file:write(minetest.serialize(wesh.matrix))
+		file:close()
 	end
-	file:write(minetest.serialize(wesh.matrix))
-	file:close()
 	
-	
-	wesh.notify(player, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "', reload the world to move them to the mod folder and enable them")
+	wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "', reload the world to move them to the mod folder and enable them")
+	return true
 end
 
 function wesh.prepare_data_file(description, canvas)
@@ -374,9 +423,10 @@ function wesh.prepare_data_file(description, canvas)
 	for _, box in ipairs(canvas.boxes) do
 		table.insert(boxes, wesh.box_to_collision_box(box, canvas.size))
 	end
+	
 	local data = {
 		description = description,
-		variants = wesh.variants,
+		variants = canvas.chosen_variants,
 		collision_box = {
 			type = "fixed",
 			fixed = boxes,
@@ -780,12 +830,8 @@ function wesh.merge_tables(t1, t2)
 	end
 end
 
-function wesh.notify(player, message)
-	local formspec = "size[10,5]textarea[1,1;8,3;notice;Notice;" .. minetest.formspec_escape(message) .. "]"
-					.. "button_exit[6,4;3,0;exit;Okay]"
-	local playername = player:get_player_name()
-	minetest.show_formspec(playername, "notice_form", formspec)
-	minetest.chat_send_player(playername, "[" .. wesh.name .. "] " .. message)
+function wesh.notify(playername, message)
+	minetest.chat_send_player(playername, "[wesh] " .. message)
 end
 
 function wesh.out_of_bounds(pos, canv_size)
