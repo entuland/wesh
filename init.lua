@@ -7,6 +7,15 @@ wesh = {
 	forms = {},
 }
 
+minetest.register_privilege("wesh_capture", {
+	description = "Can use wesh canvases to capture new meshes",
+	give_to_singleplayer = true,
+})
+
+minetest.register_privilege("wesh_place", {
+	description = "Can place nodes created from wesh captures",
+	give_to_singleplayer = true,
+})
 
 local smartfs = dofile(wesh.modpath .. "/smartfs.lua")
 
@@ -311,6 +320,12 @@ end
 function wesh.mesh_capture_confirmed(button_or_field, state)
 	local meshname = state:get("meshname"):getText()
 	local playername = state.player	
+	
+	if not minetest.get_player_privs(playername).wesh_capture then
+		wesh.notify(playername, "Insufficient privileges to capture new meshes")
+		return
+	end
+	
 	local canvas = wesh.player_canvas[playername]
 	canvas.generate_matrix = state:get("generate_matrix"):getValue()
 	
@@ -512,6 +527,14 @@ function wesh._load_mesh(obj_filename)
 		end
 		if props.collision_box and not props.selection_box then
 			props.selection_box = props.collision_box
+		end
+		props.on_place = function(itemstack, placer, pointed_thing)
+			local playername = placer:get_player_name()
+			if not minetest.get_player_privs(playername).wesh_place then
+				wesh.notify(playername, "Insufficient privileges to place mesh nodes")
+				return
+			end
+			minetest.item_place(itemstack, placer, pointed_thing)
 		end
 		minetest.register_node("wesh:" .. nodename .. "_" .. variant, props)
 	end
