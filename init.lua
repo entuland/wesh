@@ -241,7 +241,7 @@ end
 function wesh._init_vertex_textures()
 	-- creates a 4x4 grid of UV mappings, each with a margin of one pixel
 	-- will be used by the .OBJ file generator
-	local vt = ""
+	local vt = {}
 	local space = wesh.vt_size / 4
 	local tile = space - 2
 	local offset = tile / 2
@@ -250,13 +250,13 @@ function wesh._init_vertex_textures()
 	local mult = 1 / wesh.vt_size
 	for y = start, stop, space do
 		for x = start, stop, space do
-			vt = vt .. "vt " .. ((x + offset) * mult) .. " " .. ((y + offset) * mult) .. "\n" -- top right
-			vt = vt .. "vt " .. ((x + offset) * mult) .. " " .. ((y - offset) * mult) .. "\n" -- bottom right
-			vt = vt .. "vt " .. ((x - offset) * mult) .. " " .. ((y - offset) * mult) .. "\n" -- bottom left
-			vt = vt .. "vt " .. ((x - offset) * mult) .. " " .. ((y + offset) * mult) .. "\n" -- top left
+			table.insert(vt, "vt " .. ((x + offset) * mult) .. " " .. ((y + offset) * mult) .. "\n") -- top right
+			table.insert(vt, "vt " .. ((x + offset) * mult) .. " " .. ((y - offset) * mult) .. "\n") -- bottom right
+			table.insert(vt, "vt " .. ((x - offset) * mult) .. " " .. ((y - offset) * mult) .. "\n") -- bottom left
+			table.insert(vt, "vt " .. ((x - offset) * mult) .. " " .. ((y + offset) * mult) .. "\n") -- top left
 		end
 	end
-	wesh.vertex_textures = vt
+	wesh.vertex_textures = table.concat(vt)
 end
 
 function wesh._init_colors()
@@ -382,6 +382,10 @@ function wesh._init_geometry()
 		-- facedir 3, +Y, 270 deg
 		function(p) p.x, p.z = -p.z, p.x return p end,
 	}
+end
+
+function wesh.transform(facedir, pos)
+	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
 end
 
 function wesh._reset_geometry(canv_size)
@@ -926,12 +930,12 @@ function wesh.construct_face(rel_pos, canvas, texture_vertices, facename, vertic
 	local normal = wesh.face_normals[normal_index]
 	local hider_pos = vector.add(rel_pos, normal)
 	if not wesh.out_of_bounds(hider_pos, canvas.size) and wesh.get_voxel_color(hider_pos) ~= "air" then return end
-	local face_line = "f "
+	local face_line = { "f " }
 	for i, vertex in ipairs(vertices) do
 		local index = wesh.get_vertex_index(rel_pos, canvas.size, vertex)
-		face_line = face_line .. index .. "/" .. texture_vertices[i] .. "/" .. normal_index .. " "
+		table.insert(face_line, index .. "/" .. texture_vertices[i] .. "/" .. normal_index .. " ")
 	end
-	table.insert(wesh.faces, face_line)
+	table.insert(wesh.faces, table.concat(face_line))
 	if canvas.max_faces > 0 and #wesh.faces > canvas.max_faces then
 		error({ msg = canvas.max_faces .. " faces limit exceeded"})
 	end
@@ -1019,11 +1023,11 @@ function wesh.node_to_voxel(rel_pos, canvas)
 end
 
 function wesh.normals_to_string()
-	local output = ""
+	local output = {}
 	for i, normal in ipairs(wesh.face_normals) do
-		output = output .. "vn " .. normal.x .. " " .. normal.y .. " " .. normal.z .. "\n"
+		table.insert(output, "vn " .. normal.x .. " " .. normal.y .. " " .. normal.z .. "\n")
 	end
-	return output
+	return table.concat(output)
 end
 
 function wesh.voxel_to_faces(rel_pos, canvas)
@@ -1036,11 +1040,11 @@ function wesh.voxel_to_faces(rel_pos, canvas)
 end
 
 function wesh.vertices_to_string()
-	local output = ""
+	local output = {}
 	for i, vertex in ipairs(wesh.vertices) do
-		output = output .. "v " .. vertex.x .. " " .. vertex.y .. " " .. vertex.z .. "\n"
+		table.insert(output, "v " .. vertex.x .. " " .. vertex.y .. " " .. vertex.z .. "\n")
 	end
-	return output
+	return table.concat(output)
 end
 
 -- ========================================================================
@@ -1102,10 +1106,6 @@ function wesh.out_of_bounds(pos, canv_size)
 		or pos.z < 1 or pos.z > canv_size
 end
 
-function wesh.transform(facedir, pos)
-	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
-end
-
 function wesh.serialize(object, max_wrapping)
 	local function helper(obj, max_depth, depth, seen)
 		if not depth then 
@@ -1137,13 +1137,13 @@ function wesh.serialize(object, max_wrapping)
 			end
 			seen[tostring(obj)] = true;
 			
-			local output = "{\n"
+			local output = { "{\n" }
 			local post_table = string.rep("\t", depth) .. "}"
 			local pre_key = string.rep("\t", depth + 1)
 			local post_value = ",\n";
 			
 			if not wrap then
-				output = "{ "
+				output = { "{ " }
 				post_table = "}"
 				pre_key = ""
 				post_value = ", "
@@ -1157,10 +1157,13 @@ function wesh.serialize(object, max_wrapping)
 				elseif type(k) ~= "string" or k:match("[^%w_]") then
 					error("[wesh] serialize(): Unsupported array key " .. helper(k))
 				end
-				output = output .. pre_key .. key .. helper(v, max_depth, depth + 1, seen) .. post_value 
+				table.insert(output, pre_key)
+				table.insert(output, key)
+				table.insert(output, helper(v, max_depth, depth + 1, seen))
+				table.insert(output, post_value)
 			end
-			
-			return output .. post_table
+			table.insert(output, post_table)
+			return table.concat(output)
 		else
 			error("[wesh] serialize(): Data type " .. t .. " not supported")
 		end
