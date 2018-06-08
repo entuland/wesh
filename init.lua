@@ -2,6 +2,7 @@
 wesh = {
 	name = "wesh",
 	temp_foldername = "wesh_temp_obj_files",
+	default_max_faces = 8000,
 	modpath = minetest.get_modpath(minetest.get_current_modname()),
 	vt_size = 72,
 	player_canvas = {},
@@ -28,16 +29,32 @@ local smartfs = dofile(wesh.modpath .. "/smartfs.lua")
 local storage = dofile(wesh.modpath .. "/storage.lua")
 
 wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
-	state:size(6, 6)
+	state:size(7, 7)
 	
-	local meshname_field = state:field(0.5, 0.5, 4, 1, "meshname", "Enter the name for your mesh")
+	local meshname_field = state:field(0.5, 0.5, 5, 1, "meshname", "Enter the name for your mesh")
+	local capture_button = state:button(5, 0.2, 2, 1, "capture", "Capture")
+	
+	state:checkbox(0.5, 1, "generate_matrix", "Generate backup matrix")
+	
+	state:label(0.5, 2, "label_variants", "Select one or more variants:")
+	local variants_x = 0.5
+	local variants_y = 2.5
+	
+	local delete_button = state:button(5, 3.2, 2, 0, "delete", "Manage\nMeshes")
+	local give_button = state:button(5, 4.2, 2, 0, "give", "Giveme\nMeshes")
+	
+	local max_faces = state:field(0.5, 6.5, 4, 1, "max_faces", "Max # faces, zero disables limit")
+	local cancel_button = state:button(5, 6.2, 2, 1, "cancel", "Cancel")
+
 	meshname_field:onKeyEnter(wesh.mesh_capture_confirmed)
 	meshname_field:setCloseOnEnter(false)
-	
-	local capture_button = state:button(4, 0.2, 2, 1, "capture", "Capture")
 	capture_button:onClick(wesh.mesh_capture_confirmed)
+	give_button:setClose(true)
+	cancel_button:setClose(true)
+	delete_button:setClose(true)
+	max_faces:setText(wesh.default_max_faces)
+	max_faces:setCloseOnEnter(false)
 	
-	local delete_button = state:button(4, 3.2, 2, 0, "delete", "Manage\nMeshes")
 	delete_button:onClick(function(_, state)
 		if not minetest.get_player_privs(state.player).wesh_delete then
 			wesh.notify(state.player, "Insufficient privileges to manage meshes")
@@ -47,54 +64,19 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 			wesh.forms.delete_meshes:show(state.player)
 		end)
 	end)
-	delete_button:setClose(true)
 	
-	local give_button = state:button(4, 4.2, 2, 0, "give", "Giveme\nMeshes")
 	give_button:onClick(function(_, state)
 		minetest.after(0, function()
 			wesh.forms.giveme_meshes:show(state.player)
 		end)
 	end)
-	give_button:setClose(true)
-	
-	
-	local cancel_button = state:button(4, 5.2, 2, 1, "cancel", "Cancel")
-	cancel_button:setClose(true)
-	
-	state:checkbox(0.5, 1, "generate_matrix", "Generate backup matrix")
-	
-	state:label(0.5, 2, "label_variants", "Select one or more variants:")
-	
-	local y = 2.5
+		
 	for name, texture in pairs(wesh.variants) do
-		local chk = state:checkbox(0.5, y, "variant_" .. name, name)
+		local chk = state:checkbox(variants_x, variants_y, "variant_" .. name, name)
 		chk:setValue(true)
-		y = y + 0.5
+		variants_y = variants_y + 0.5
 	end
 end)
-
-function wesh.get_all_obj_files()
-	local stored_obj_files = wesh.filter_non_obj(wesh.get_stored_files())
-	local temp_obj_files = wesh.filter_non_obj(wesh.get_temp_files())
-	local marked_objs = wesh.retrieve_marked_objs()
-	local result = {}
-
-	for _, obj_filename in pairs(stored_obj_files) do
-		table.insert(result, {
-			filename = obj_filename,
-			type = marked_objs[obj_filename] and "pending deletion" or "stored",
-		})
-	end
-	
-	for _, obj_filename in pairs(temp_obj_files) do
-		table.insert(result, {
-			filename = obj_filename,
-			type = "temporary",
-		})
-	end
-
-	return result
-end
 
 wesh.forms.delete_meshes = smartfs.create("wesh.forms.delete_meshes", function(state)
 	state:size(8, 8)
@@ -474,6 +456,7 @@ function wesh.mesh_capture_confirmed(button_or_field, state)
 	
 	local canvas = wesh.player_canvas[playername]
 	canvas.generate_matrix = state:get("generate_matrix"):getValue()
+	canvas.max_faces = tonumber(state:get("max_faces"):getText()) or wesh.default_max_faces
 	
 	canvas.chosen_variants = {}
 	
@@ -523,16 +506,25 @@ function wesh.save_new_mesh(canvas, playername, description)
 	-- empty all helper variables
 	wesh._reset_geometry(canvas.size)
 	
+	canvas.voxel_count = 0
+	
 	-- read all nodes from the canvas space in the world
 	-- extract the colors and put them into a helper matrix of color voxels
 	-- generate primary boundary
 	wesh.traverse_matrix(wesh.node_to_voxel, canvas.size, canvas)
-
+	
 	-- generate secondary boundaries
 	wesh.generate_secondary_boundaries(canvas)
 		
 	-- generate faces according to voxels
-	wesh.traverse_matrix(wesh.voxel_to_faces, canvas.size, canvas)
+	local success, err = pcall(function()
+		wesh.traverse_matrix(wesh.voxel_to_faces, canvas.size, canvas)
+	end)
+	
+	if not success then
+		wesh.notify(playername, err.msg)
+		return false
+	end
 	
 	-- this will be the actual content of the .obj file
 	local vt_section = wesh.vertex_textures
@@ -584,7 +576,9 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername,
 		file:close()
 	end
 	
-	wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "', reload the world to move them to the mod folder and enable them")
+	wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "'")
+	wesh.notify(playername, "Reload the world to move newly created mesh to the mod folder")
+	wesh.notify(playername, "Mesh stats: " .. canvas.voxel_count .. " voxels, " .. #wesh.vertices .. " vertices, " .. #wesh.faces .. " faces")
 	return true
 end
 
@@ -684,6 +678,29 @@ end
 
 function wesh.create_nodename(obj_filename, variant)
 	return "wesh:" .. obj_filename:gsub("[^%w]+", "_"):gsub("_obj", "") .. "_" .. variant 
+end
+
+function wesh.get_all_obj_files()
+	local stored_obj_files = wesh.filter_non_obj(wesh.get_stored_files())
+	local temp_obj_files = wesh.filter_non_obj(wesh.get_temp_files())
+	local marked_objs = wesh.retrieve_marked_objs()
+	local result = {}
+
+	for _, obj_filename in pairs(stored_obj_files) do
+		table.insert(result, {
+			filename = obj_filename,
+			type = marked_objs[obj_filename] and "pending deletion" or "stored",
+		})
+	end
+	
+	for _, obj_filename in pairs(temp_obj_files) do
+		table.insert(result, {
+			filename = obj_filename,
+			type = "temporary",
+		})
+	end
+
+	return result
 end
 
 function wesh.get_obj_filedata(obj_filename)
@@ -905,16 +922,19 @@ end
 -- mesh generation helpers
 -- ========================================================================
 
-function wesh.construct_face(rel_pos, canv_size, texture_vertices, facename, vertices, normal_index)
+function wesh.construct_face(rel_pos, canvas, texture_vertices, facename, vertices, normal_index)
 	local normal = wesh.face_normals[normal_index]
 	local hider_pos = vector.add(rel_pos, normal)
-	if not wesh.out_of_bounds(hider_pos, canv_size) and wesh.get_voxel_color(hider_pos) ~= "air" then return end
+	if not wesh.out_of_bounds(hider_pos, canvas.size) and wesh.get_voxel_color(hider_pos) ~= "air" then return end
 	local face_line = "f "
 	for i, vertex in ipairs(vertices) do
-		local index = wesh.get_vertex_index(rel_pos, canv_size, vertex)
+		local index = wesh.get_vertex_index(rel_pos, canvas.size, vertex)
 		face_line = face_line .. index .. "/" .. texture_vertices[i] .. "/" .. normal_index .. " "
 	end
 	table.insert(wesh.faces, face_line)
+	if canvas.max_faces > 0 and #wesh.faces > canvas.max_faces then
+		error({ msg = canvas.max_faces .. " faces limit exceeded"})
+	end
 end
 
 function wesh.get_node_color(pos)
@@ -992,6 +1012,7 @@ function wesh.node_to_voxel(rel_pos, canvas)
 	local abs_pos = wesh.make_absolute(canvas.pos, canvas.size, canvas.facedir, rel_pos)
 	local color = wesh.get_node_color(abs_pos)
 	if color ~= "air" then
+		canvas.voxel_count = canvas.voxel_count + 1
 		wesh.update_collision_box(rel_pos, canvas.boundary)
 	end
 	wesh.set_voxel_color(rel_pos, color)
@@ -1010,7 +1031,7 @@ function wesh.voxel_to_faces(rel_pos, canvas)
 	if color == "air" then return end
 	for facename, facedata in pairs(wesh.face_construction) do
 		local texture_vertices = wesh.get_texture_vertices(color)
-		wesh.construct_face(rel_pos, canvas.size, texture_vertices, facename, facedata.vertices, facedata.normal)		
+		wesh.construct_face(rel_pos, canvas, texture_vertices, facename, facedata.vertices, facedata.normal)		
 	end
 end
 
