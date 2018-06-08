@@ -1,6 +1,7 @@
 
 wesh = {
 	name = "wesh",
+	temp_foldername = "wesh_temp_obj_files",
 	modpath = minetest.get_modpath(minetest.get_current_modname()),
 	vt_size = 72,
 	player_canvas = {},
@@ -17,7 +18,14 @@ minetest.register_privilege("wesh_place", {
 	give_to_singleplayer = true,
 })
 
+minetest.register_privilege("wesh_delete", {
+	description = "Can delete captured meshes",
+	give_to_singleplayer = true,
+})
+
 local smartfs = dofile(wesh.modpath .. "/smartfs.lua")
+
+local storage = dofile(wesh.modpath .. "/storage.lua")
 
 wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	state:size(6, 6)
@@ -29,19 +37,23 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	local capture_button = state:button(4, 0.2, 2, 1, "capture", "Capture")
 	capture_button:onClick(wesh.mesh_capture_confirmed)
 	
-	-- local delete_button = state:button(4, 3.2, 2, 0, "delete", "Delete\nMeshes")
-	-- delete_button:onClick(function(_, state)
-		-- minetest.after(0, function(playername)
-			-- wesh.forms.delete_meshes:show(playername)
-		-- end, state.player)
-	-- end)
-	-- delete_button:setClose(true)
+	local delete_button = state:button(4, 3.2, 2, 0, "delete", "Manage\nMeshes")
+	delete_button:onClick(function(_, state)
+		if not minetest.get_player_privs(state.player).wesh_delete then
+			wesh.notify(state.player, "Insufficient privileges to manage meshes")
+			return
+		end
+		minetest.after(0, function()
+			wesh.forms.delete_meshes:show(state.player)
+		end)
+	end)
+	delete_button:setClose(true)
 	
 	local give_button = state:button(4, 4.2, 2, 0, "give", "Giveme\nMeshes")
 	give_button:onClick(function(_, state)
-		minetest.after(0, function(playername)
-			wesh.forms.giveme_meshes:show(playername)
-		end, state.player)
+		minetest.after(0, function()
+			wesh.forms.giveme_meshes:show(state.player)
+		end)
 	end)
 	give_button:setClose(true)
 	
@@ -61,34 +73,118 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	end
 end)
 
--- wesh.forms.delete_meshes = smartfs.create("wesh.forms.delete_meshes", function(state)
+function wesh.get_all_obj_files()
+	local stored_obj_files = wesh.filter_non_obj(wesh.get_stored_files())
+	local temp_obj_files = wesh.filter_non_obj(wesh.get_temp_files())
+	local marked_objs = wesh.retrieve_marked_objs()
+	local result = {}
 
--- end)
+	for _, obj_filename in pairs(stored_obj_files) do
+		table.insert(result, {
+			filename = obj_filename,
+			type = marked_objs[obj_filename] and "pending deletion" or "stored",
+		})
+	end
+	
+	for _, obj_filename in pairs(temp_obj_files) do
+		table.insert(result, {
+			filename = obj_filename,
+			type = "temporary",
+		})
+	end
+
+	return result
+end
+
+wesh.forms.delete_meshes = smartfs.create("wesh.forms.delete_meshes", function(state)
+	state:size(8, 8)
+	
+	local all_obj_files_list = state:listbox(0.5, 0.5, 7, 5.5, "all_obj_files_list")
+	local label = state:label(0.5, 6.3, "label", "No OBJ selected")
+	local action_button = state:button(0.5, 7.2, 5, 1, "action_button", "[disabled]")
+	local done_button = state:button(6, 7.2, 2, 1, "done", "Done")
+	done_button:setClose(true)
+	
+	local obj_files = nil
+	
+	local function update_button(obj)
+		if not obj or not obj.type then 
+			action_button:setText("[disabled]")	
+		elseif obj.type == "stored" then
+			action_button:setText("Mark for deletion")	
+		elseif obj.type == "pending deletion" then
+			action_button:setText("Cancel pending deletion")	
+		elseif obj.type == "temporary" then
+			action_button:setText("Delete selected temporary NOW!")	
+		end
+	end
+	
+	local function fill_list()
+		obj_files = wesh.get_all_obj_files()
+		all_obj_files_list:clearItems()
+		for index, obj in ipairs(obj_files) do
+			local item = obj.filename .. (obj.type ~= "" and (" (" .. obj.type .. ")") or "")
+			all_obj_files_list:addItem(item)
+		end
+		all_obj_files_list:setSelected("")
+		label:setText("No OBJ selected")
+	end
+	
+	all_obj_files_list:onClick(function(self, state)
+		local index = self:getSelected()
+		if index then
+			label:setText("Selected:\n" .. self:getItem(index))
+		else
+			label:setText("No OBJ selected")
+		end
+		update_button(obj_files[index])
+	end)
+
+	action_button:onClick(function(_, state)
+		local index = all_obj_files_list:getSelected()	
+		local obj = obj_files[index]
+		if not obj or not obj.type then 
+			return
+		elseif obj.type == "stored" then
+			wesh.mark_obj_for_deletion(obj.filename)
+		elseif obj.type == "pending deletion" then
+			wesh.unmark_obj_for_deletion(obj.filename)
+		elseif obj.type == "temporary" then
+			wesh.delete_temp_obj(obj.filename)
+		end
+		fill_list()	
+		update_button()
+	end)
+	
+	fill_list()
+	
+end)
 
 wesh.forms.giveme_meshes = smartfs.create("wesh.forms.giveme_meshes", function(state)
-	state:size(6, 6)
+	state:size(8, 8)
 	
 	local stored_obj_files = wesh.filter_non_obj(wesh.get_stored_files())
 
-	local stored_list = state:listbox(0.5, 0.5, 5, 4, "stored_list")	
+	local stored_variants = state:listbox(0.5, 0.5, 7, 6.5, "stored_variants")	
 	for _, obj_filename in pairs(stored_obj_files) do
 		local data = wesh.get_obj_filedata(obj_filename)
 		if not data.variants then break end
 		for variant, _ in pairs(data.variants) do
-			stored_list:addItem(wesh.create_nodename(obj_filename, variant))
+			stored_variants:addItem(wesh.create_nodename(obj_filename, variant))
 		end
 	end
-	stored_list:onDoubleClick(wesh.give_mesh_callback)
+	stored_variants:onDoubleClick(wesh.give_mesh_callback)
 
-	local give_button = state:button(0.5, 5.2, 3, 1, "give", "Giveme selected")
+	local give_button = state:button(0.5, 7.2, 3, 1, "give", "Giveme selected")
 	give_button:onClick(wesh.give_mesh_callback)
 	
-	local done_button = state:button(4, 5.2, 2, 1, "done", "Done")
+	local done_button = state:button(4, 7.2, 2, 1, "done", "Done")
 	done_button:setClose(true)
 end)
 
 function wesh.give_mesh_callback(_, state)
-	local nodename = state:get("stored_list"):getSelectedItem()
+	local nodename = state:get("stored_variants"):getSelectedItem()
+	if not nodename then return end
 	local player_inv = minetest.get_player_by_name(state.player):get_inventory()
 	player_inv:add_item("main", {name = nodename, count = 1})
 	wesh.notify(state.player, nodename .. " added to inventory")
@@ -99,7 +195,7 @@ end
 -- ========================================================================
 
 function wesh._init()
-	wesh.temp_path = minetest.get_worldpath() .. "/mod_storage/" .. wesh.name
+	wesh.temp_path = minetest.get_worldpath() .. "/mod_storage/" .. wesh.temp_foldername
 	wesh.gen_prefix = "mesh_"
 
 	if not minetest.mkdir(wesh.temp_path) then
@@ -109,6 +205,7 @@ function wesh._init()
 	wesh._init_colors()
 	wesh._init_geometry()
 	wesh._init_variants()
+	wesh._delete_marked_objs()
 	wesh._move_temp_files()
 	wesh._load_mod_meshes()
 	wesh._register_canvas_nodes()
@@ -533,6 +630,45 @@ function wesh.filter_non_obj(filelist)
 		end
 	end
 	return list
+end
+
+function wesh.retrieve_marked_objs()
+	local marked_objs = minetest.deserialize(storage:get_string("marked_objs"))
+	return type(marked_objs) == "table" and marked_objs or {}
+end
+
+function wesh.store_marked_objs(marked_objs)
+	storage:set_string("marked_objs", minetest.serialize(marked_objs))
+end
+
+function wesh.mark_obj_for_deletion(obj_filename)
+	local marked_objs = wesh.retrieve_marked_objs()
+	marked_objs[obj_filename] = 1
+	wesh.store_marked_objs(marked_objs)
+end
+
+function wesh.unmark_obj_for_deletion(obj_filename)
+	local marked_objs = wesh.retrieve_marked_objs()
+	marked_objs[obj_filename] = nil
+	wesh.store_marked_objs(marked_objs)
+end
+
+function wesh.delete_temp_obj(obj_filename)
+	local full_obj_filename = wesh.temp_path .. "/" .. obj_filename
+	wesh._delete_obj_fileset(full_obj_filename)
+end
+
+function wesh._delete_obj_fileset(full_obj_filename)
+	os.remove(full_obj_filename)
+	os.remove(full_obj_filename .. ".dat")
+	os.remove(full_obj_filename .. ".matrix.dat")
+end
+
+function wesh._delete_marked_objs()
+	for obj_filename, _ in pairs(wesh.retrieve_marked_objs()) do
+		wesh._delete_obj_fileset(wesh.modpath .. "/models/" .. obj_filename)
+	end
+	storage:set_string("marked_objs", "")
 end
 
 function wesh._move_temp_files()
