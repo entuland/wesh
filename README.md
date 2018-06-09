@@ -142,7 +142,7 @@ Those deletions will not be performed until you enter _that_ world again.
 
 All meshes will be finally stored in the mod's folder - this means that _all_ worlds will end up sharing the _same_ meshes. If you delete any mesh in a world it will disappear for all worlds.
 
-# Dealing with matrices / combining them / using them as blueprints
+# Dealing with matrices
 
 Matrix files record only the colors of your build and as such will only use wool blocks to rebuild your creations when imported.
 
