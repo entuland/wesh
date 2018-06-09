@@ -302,6 +302,7 @@ function wesh._init()
 	wesh._init_colors()
 	wesh._init_geometry()
 	wesh._init_variants()
+	wesh._init_transforms()
 	wesh._delete_marked_objs()
 	wesh._move_temp_files()
 	wesh._load_mod_meshes()
@@ -484,23 +485,89 @@ function wesh._init_geometry()
 		{x = -1, y =  0, z =  0 },
 		{x =  1, y =  0, z =  0 },
 	}
+end
+
+function wesh._init_transforms()
+	local rot = {}
+	local dir = {}
 	
-	-- helper mapper for transformation functions
-	-- only upright canvases supported
-	wesh._transfunc = {
-		-- facedir 0, +Y, no rotation
-		function(p) return p end,
-		-- facedir 1, +Y, 90 deg
-		function(p) p.x, p.z = p.z, -p.x return p end,
-		-- facedir 2, +Y, 180 deg
-		function(p) p.x, p.z = -p.x, -p.z return p end,
-		-- facedir 3, +Y, 270 deg
-		function(p) p.x, p.z = -p.z, p.x return p end,
+	-- no rotation
+	rot[0] = {{  1,  0,  0},
+			  {  0,  1,  0},
+			  {  0,  0,  1}}
+	-- 90 degrees clockwise
+	rot[1] = {{  0,  0,  1},
+			  {  0,  1,  0},
+			  { -1,  0,  0}}
+	-- 180 degrees
+	rot[2] = {{ -1,  0,  0},
+			  {  0,  1,  0},
+			  {  0,  0, -1}}
+	-- 270 degrees clockwise
+	rot[3] = {{  0,  0, -1},
+			  {  0,  1,  0},
+			  {  1,  0,  0}}
+
+	-- directions
+	-- 	Y+
+    dir[0] = {{  1,  0,  0},
+			  {  0,  1,  0},
+			  {  0,  0,  1}}
+    -- Z+
+	dir[1] = {{  1,  0,  0},
+			  {  0,  0, -1},
+			  {  0,  1,  0}}
+	-- Z-
+	dir[2] = {{  1,  0,  0},
+			  {  0,  0,  1},
+			  {  0, -1,  0}}
+	-- X+
+	dir[3] = {{  0,  1,  0},
+			  { -1,  0,  0},
+			  {  0,  0,  1}}
+	-- X-
+	dir[4] = {{  0, -1,  0},
+			  {  1,  0,  0},
+			  {  0,  0,  1}}
+	-- Y-
+	dir[5] = {{ -1,  0,  0},
+			  {  0, -1,  0},
+			  {  0,  0,  1}}
+	
+	wesh.facedir_transform = {}
+	
+	for facedir = 0, 23 do
+		local direction = math.floor(facedir / 4)
+		local rotation = facedir % 4
+		wesh.facedir_transform[facedir] = wesh.matrix_multiply(dir[direction], rot[rotation])
+	end
+end
+
+function wesh.apply_transform(pos, transform)
+	return {
+		x = pos.x * transform[1][1] + pos.y * transform[1][2] + pos.z * transform[1][3],
+		y = pos.x * transform[2][1] + pos.y * transform[2][2] + pos.z * transform[2][3],
+		z = pos.x * transform[3][1] + pos.y * transform[3][2] + pos.z * transform[3][3],
 	}
 end
 
+function wesh.matrix_multiply(a, b)
+	local res = {}
+	for row = 1, #a do
+		res[row] = {}
+		for col = 1, #b[1] do
+			local num = a[row][1] * b[1][col]
+			for i = 2, #a[1] do
+				num = num + a[row][i] * b[i][col]
+			end
+			res[row][col] = num
+		end
+	end
+	return res
+end
+
 function wesh.transform(facedir, pos)
-	return (wesh._transfunc[facedir + 1] or wesh._transfunc[1])(pos)
+	return wesh.apply_transform(pos, wesh.facedir_transform[facedir])
 end
 
 function wesh._reset_geometry(canv_size)
