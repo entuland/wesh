@@ -572,9 +572,9 @@ function wesh.canvas_interaction(clicked_pos, node, clicker)
 		canvas.size = 16
 	end
 	
-	wesh.player_canvas[clicker:get_player_name()] = canvas
-	
-	wesh.forms.capture:show(clicker:get_player_name())
+	local playername = clicker:get_player_name()
+	wesh.player_canvas[playername] = canvas
+	wesh.forms.capture:show(playername)
 end
 
 function wesh.mesh_capture_confirmed(button_or_field, state)
