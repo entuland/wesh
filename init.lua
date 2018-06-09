@@ -3,11 +3,14 @@ wesh = {
 	name = "wesh",
 	temp_foldername = "wesh_temp_obj_files",
 	default_max_faces = 8000,
-	modpath = minetest.get_modpath(minetest.get_current_modname()),
+	mod_path = minetest.get_modpath(minetest.get_current_modname()),
 	vt_size = 72,
 	player_canvas = {},
 	forms = {},
+	content_ids = {},
 }
+
+wesh.models_path = wesh.mod_path .. "/models/"
 
 minetest.register_privilege("wesh_capture", {
 	description = "Can use wesh canvases to capture new meshes",
@@ -24,9 +27,19 @@ minetest.register_privilege("wesh_delete", {
 	give_to_singleplayer = true,
 })
 
-local smartfs = dofile(wesh.modpath .. "/smartfs.lua")
+minetest.register_privilege("wesh_import", {
+	description = "Can import matrix files",
+	give_to_singleplayer = true,
+})
 
-local storage = dofile(wesh.modpath .. "/storage.lua")
+minetest.register_privilege("wesh_vacuum", {
+	description = "Can disintegrate all blocks in the canvas space",
+	give_to_singleplayer = true,
+})
+
+local smartfs = dofile(wesh.mod_path .. "/smartfs.lua")
+
+local storage = dofile(wesh.mod_path .. "/storage.lua")
 
 wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	state:size(7, 7)
@@ -34,14 +47,16 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	local meshname_field = state:field(0.5, 0.5, 5, 1, "meshname", "Enter the name for your mesh")
 	local capture_button = state:button(5, 0.2, 2, 1, "capture", "Capture")
 	
-	state:checkbox(0.5, 1, "generate_matrix", "Generate backup matrix")
+	state:checkbox(0.5, 1, "generate_matrix", "Generate backup matrix"):setValue(true)
 	
 	state:label(0.5, 2, "label_variants", "Select one or more variants:")
 	local variants_x = 0.5
 	local variants_y = 2.5
 	
-	local delete_button = state:button(5, 3.2, 2, 0, "delete", "Manage\nMeshes")
-	local give_button = state:button(5, 4.2, 2, 0, "give", "Giveme\nMeshes")
+	local delete_button = state:button(5, 2.2, 2, 0, "delete", "Manage\nMeshes")
+	local give_button = state:button(5, 3.2, 2, 0, "give", "Giveme\nMeshes")
+	local import_button = state:button(5, 4.2, 2, 0, "import", "Import\nMatrix")
+	local vacuum_button = state:button(5, 5.2, 2, 0, "vacuum", "Vacuum\nCanvas")
 	
 	local max_faces = state:field(0.5, 6.5, 4, 1, "max_faces", "Max # faces, zero disables limit")
 	local cancel_button = state:button(5, 6.2, 2, 1, "cancel", "Cancel")
@@ -49,9 +64,13 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	meshname_field:onKeyEnter(wesh.mesh_capture_confirmed)
 	meshname_field:setCloseOnEnter(false)
 	capture_button:onClick(wesh.mesh_capture_confirmed)
-	give_button:setClose(true)
-	cancel_button:setClose(true)
+	
 	delete_button:setClose(true)
+	give_button:setClose(true)
+	import_button:setClose(true)
+	vacuum_button:setClose(true)
+	cancel_button:setClose(true)
+	
 	max_faces:setText(wesh.default_max_faces)
 	max_faces:setCloseOnEnter(false)
 	
@@ -64,17 +83,56 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 			wesh.forms.delete_meshes:show(state.player)
 		end)
 	end)
-	
+
 	give_button:onClick(function(_, state)
 		minetest.after(0, function()
 			wesh.forms.giveme_meshes:show(state.player)
 		end)
+	end)	
+	
+	import_button:onClick(function(_, state)
+		if not minetest.get_player_privs(state.player).wesh_import then
+			wesh.notify(state.player, "Insufficient privileges to import matrices")
+			return
+		end
+		minetest.after(0, function()
+			wesh.forms.import_matrix:show(state.player)
+		end)
 	end)
-		
-	for name, texture in pairs(wesh.variants) do
+	
+	vacuum_button:onClick(function(_, state)
+		if not minetest.get_player_privs(state.player).wesh_vacuum then
+			wesh.notify(state.player, "Insufficient privileges to vacuum canvas")
+			return
+		end
+		minetest.after(0, function()
+			wesh.forms.vacuum_canvas:show(state.player)
+		end)
+	end)
+
+	local first_variant = nil
+	local one_checked = false
+	
+	local variant_names = {}
+	
+	for name, _ in pairs(wesh.variants) do table.insert(variant_names, name) end
+	
+	table.sort(variant_names)
+	
+	for _, name in ipairs(variant_names) do
 		local chk = state:checkbox(variants_x, variants_y, "variant_" .. name, name)
-		chk:setValue(true)
+		if name == 'plain' then
+			one_checked = true
+			chk:setValue(true)
+		end
 		variants_y = variants_y + 0.5
+		if not first_variant then
+			first_variant = chk
+		end
+	end
+	
+	if not one_checked then
+		first_variant:setValue(true)
 	end
 end)
 
@@ -172,12 +230,69 @@ function wesh.give_mesh_callback(_, state)
 	wesh.notify(state.player, nodename .. " added to inventory")
 end
 
+wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(state)
+	state:size(8, 8)
+	
+	local stored_matrices = wesh.filter_non_matrix(wesh.get_stored_files())
+	local temp_matrices = wesh.filter_non_matrix(wesh.get_temp_files())
+	
+	local matrices_list = state:listbox(0.5, 0.5, 7, 6.5, "matrices_list")	
+	
+	for _, matrix_filename in pairs(stored_matrices) do
+		matrices_list:addItem(matrix_filename)
+	end
+
+	for _, matrix_filename in pairs(temp_matrices) do
+		matrices_list:addItem(matrix_filename)
+	end
+
+	local import_button = state:button(0.5, 7.2, 3, 1, "import", "Import selected")
+	import_button:onClick(function()
+		local full_matrix_filename = false
+		local selected_matrix_filename = matrices_list:getSelectedItem()
+		for _, matrix_filename in pairs(stored_matrices) do
+			if matrix_filename == selected_matrix_filename then
+				full_matrix_filename = wesh.models_path .. matrix_filename
+				break
+			end
+		end
+
+		for _, matrix_filename in pairs(temp_matrices) do
+			if matrix_filename == selected_matrix_filename then
+				full_matrix_filename = wesh.temp_path .. matrix_filename
+				break
+			end
+		end
+		
+		wesh.import_matrix(full_matrix_filename, state.player)
+	end)
+	import_button:setClose(true)
+	
+	local done_button = state:button(4, 7.2, 2, 1, "done", "Done")
+	done_button:setClose(true)
+end)
+
+wesh.forms.vacuum_canvas = smartfs.create("wesh.forms.vacuum_canvas", function(state)
+	state:size(4, 3)
+	
+	local confirm_vacuum = state:button(0.5, -1, 3, 4, "confirm_vacuum", "Yes, delete ALL NODES\nin the canvas range!")
+	confirm_vacuum:onClick(function()
+		wesh.vacuum_canvas(state.player)
+		wesh.notify(state.player, "Canvas vacuumed")
+	end)
+	confirm_vacuum:setClose(true)
+	
+	local cancel_button = state:button(0.5, 1, 3, 3, "cancel", "Cancel")
+	cancel_button:setClose(true)
+end)
+
+
 -- ========================================================================
 -- initialization functions
 -- ========================================================================
 
 function wesh._init()
-	wesh.temp_path = minetest.get_worldpath() .. "/mod_storage/" .. wesh.temp_foldername
+	wesh.temp_path = minetest.get_worldpath() .. "/mod_storage/" .. wesh.temp_foldername .. "/"
 	wesh.gen_prefix = "mesh_"
 
 	if not minetest.mkdir(wesh.temp_path) then
@@ -306,8 +421,8 @@ function wesh._init_colors()
 	
 	local colors_filename = "nodecolors.conf"
 	local default_colors_filename = "default." .. colors_filename
-	local full_colors_filename = wesh.modpath .. "/" .. colors_filename
-	local full_default_colors_filename = wesh.modpath .. "/" .. default_colors_filename
+	local full_colors_filename = wesh.mod_path .. "/" .. colors_filename
+	local full_default_colors_filename = wesh.mod_path .. "/" .. default_colors_filename
 	
 	local file = io.open(full_colors_filename, "rb")
 	if not file then
@@ -404,8 +519,8 @@ end
 function wesh._init_variants()
 	local variants_filename = "nodevariants.lua"
 	local default_variants_filename = "default." .. variants_filename
-	local full_variants_filename = wesh.modpath .. "/" .. variants_filename
-	local full_default_variants_filename = wesh.modpath .. "/" .. default_variants_filename
+	local full_variants_filename = wesh.mod_path .. "/" .. variants_filename
+	local full_default_variants_filename = wesh.mod_path .. "/" .. default_variants_filename
 	
 	local file = io.open(full_variants_filename, "rb")
 	if not file then
@@ -445,7 +560,20 @@ end
 
 function wesh.canvas_interaction(clicked_pos, node, clicker)
 	-- called when the player right-clicks on a canvas block
-	wesh.player_canvas[clicker:get_player_name()] = { pos = clicked_pos, facedir = node.param2 };
+	local canvas = {
+		pos = clicked_pos,
+		facedir = node.param2,
+		node = node,
+	}
+	
+	canvas.size = canvas.node.name:gsub(".*(%d%d)$", "%1")
+	canvas.size = tonumber(canvas.size)
+	if not wesh.valid_canvas_sizes[canvas.size] then
+		canvas.size = 16
+	end
+	
+	wesh.player_canvas[clicker:get_player_name()] = canvas
+	
 	wesh.forms.capture:show(clicker:get_player_name())
 end
 
@@ -475,15 +603,6 @@ function wesh.mesh_capture_confirmed(button_or_field, state)
 	if no_variants then
 		wesh.notify(playername, "Please choose at least one variant")
 		return
-	end
-	
-	canvas.node = minetest.get_node_or_nil(canvas.pos)
-	if not canvas.node then return end
-
-	canvas.size = canvas.node.name:gsub(".*(%d%d)$", "%1")
-	canvas.size = tonumber(canvas.size)
-	if not wesh.valid_canvas_sizes[canvas.size] then
-		canvas.size = 16
 	end
 
 	canvas.boundary = {}
@@ -538,6 +657,113 @@ function wesh.save_new_mesh(canvas, playername, description)
 	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
 	return wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
+end
+
+-- ========================================================================
+-- matrix import helpers
+-- ========================================================================
+
+function wesh.import_matrix(full_matrix_filename, playername)
+	if not full_matrix_filename then return end
+	local file = io.open(full_matrix_filename, "rb")
+	if not file then
+		wesh.notify(playername, "Unable to open file " .. full_matrix_filename)
+		return false
+	end
+	local matrix = minetest.deserialize(file:read("*all"))
+	if not matrix or type(matrix) ~= "table" then
+		wesh.notify(playername, "Invalid matrix data inside " .. full_matrix_filename)
+		return false
+	end
+	
+	local canvas = wesh.player_canvas[playername]
+	
+	local function invalid_size(axis, size)
+		if size ~= canvas.size then
+			wesh.notify(playername, "Trying to import " .. full_matrix_filename)
+			wesh.notify(playername, axis .. " == " .. size .. " doesn't match canvas value of " .. canvas.size)
+			return true
+		end
+		return false
+	end
+	
+	if invalid_size("x", #matrix) or invalid_size("y", #matrix[1]) or invalid_size("z", #matrix[1][1]) then
+		return false
+	end
+	
+	
+	local min_pos = wesh.make_absolute({ x = 1, y = 1, z = 1 }, canvas)
+	local max_pos = wesh.make_absolute({ x = canvas.size, y = canvas.size, z = canvas.size }, canvas)
+	
+	local vm = minetest.get_voxel_manip()
+	local emin, emax = vm:read_from_map(min_pos, max_pos)
+	local a = VoxelArea:new{
+		MinEdge = emin,
+		MaxEdge = emax
+	}
+    
+	local data = vm:get_data()
+	local air_id = wesh.get_content_id("air")
+		
+	for x = 1, #matrix do
+		for y = 1, #matrix[x] do
+			for z = 1, #matrix[x][y] do
+				local color = matrix[x][y][z]
+				if color ~= "air" then
+					local rel_pos = { x = x, y = y, z = z }
+					local abs_pos = wesh.make_absolute(rel_pos, canvas)
+					local vi = a:index(abs_pos.x, abs_pos.y, abs_pos.z)
+					data[vi] = wesh.get_content_id("wool:" .. color)
+				end
+			end
+		end
+	end
+	
+	vm:set_data(data)
+	vm:write_to_map(true)
+	
+	return true
+end
+
+function wesh.get_content_id(nodename)
+	if not wesh.content_ids[nodename] then
+		wesh.content_ids[nodename] = minetest.get_content_id(nodename)
+	end
+	return wesh.content_ids[nodename]
+end
+
+function wesh.vacuum_canvas(playername)
+	
+	local canvas = wesh.player_canvas[playername]
+		
+	local min_pos = wesh.make_absolute({ x = 1, y = 1, z = 1 }, canvas)
+	local max_pos = wesh.make_absolute({ x = canvas.size, y = canvas.size, z = canvas.size }, canvas)
+	
+	local vm = minetest.get_voxel_manip()
+	local emin, emax = vm:read_from_map(min_pos, max_pos)
+	local a = VoxelArea:new{
+		MinEdge = emin,
+		MaxEdge = emax
+	}
+    
+	local data = vm:get_data()
+	local air_id = wesh.get_content_id("air")
+	
+	local min = wesh.axis_min(min_pos, max_pos)
+	local max = wesh.axis_max(min_pos, max_pos)
+	
+	for x = min.x, max.x do
+		for y = min.y, max.y do
+			for z = min.z, max.z do
+				local vi = a:index(x, y, z)
+				data[vi] = air_id
+			end
+		end
+	end
+	
+	vm:set_data(data)
+	vm:write_to_map(true)
+	
 end
 
 -- ========================================================================
@@ -609,7 +835,7 @@ function wesh.get_temp_files()
 end
 
 function wesh.get_stored_files()
-	return minetest.get_dir_list(wesh.modpath .. "/models", false)
+	return minetest.get_dir_list(wesh.models_path, false)
 end
 
 function wesh.get_all_files()
@@ -624,6 +850,16 @@ function wesh.filter_non_obj(filelist)
 	local list = {}
 	for _, filename in pairs(filelist) do
 		if wesh.is_valid_obj_filename(filename) then
+			table.insert(list, filename)
+		end
+	end
+	return list
+end
+
+function wesh.filter_non_matrix(filelist)
+	local list = {}
+	for _, filename in pairs(filelist) do
+		if wesh.is_valid_matrix_filename(filename) then
 			table.insert(list, filename)
 		end
 	end
@@ -664,7 +900,7 @@ end
 
 function wesh._delete_marked_objs()
 	for obj_filename, _ in pairs(wesh.retrieve_marked_objs()) do
-		wesh._delete_obj_fileset(wesh.modpath .. "/models/" .. obj_filename)
+		wesh._delete_obj_fileset(wesh.models_path .. obj_filename)
 	end
 	storage:set_string("marked_objs", "")
 end
@@ -672,12 +908,16 @@ end
 function wesh._move_temp_files()
 	local meshes = wesh.get_temp_files()
 	for _, filename in ipairs(meshes) do
-		os.rename(wesh.temp_path .. "/" .. filename, wesh.modpath .. "/models/" .. filename)
+		os.rename(wesh.temp_path .. "/" .. filename, wesh.models_path .. filename)
 	end
 end
 
 function wesh.is_valid_obj_filename(obj_filename)
 	return obj_filename:match("^" .. wesh.gen_prefix .. ".-%.obj$")
+end
+
+function wesh.is_valid_matrix_filename(matrix_filename)
+	return matrix_filename:match("^" .. wesh.gen_prefix .. ".-%.obj%.matrix%.dat$")
 end
 
 function wesh.create_nodename(obj_filename, variant)
@@ -708,7 +948,7 @@ function wesh.get_all_obj_files()
 end
 
 function wesh.get_obj_filedata(obj_filename)
-	local full_data_filename = wesh.modpath .. "/models/" .. obj_filename .. ".dat"
+	local full_data_filename = wesh.models_path .. obj_filename .. ".dat"
 	
 	local file = io.open(full_data_filename, "rb")
 	
@@ -989,22 +1229,23 @@ function wesh.get_voxel_color(pos)
 	return wesh.matrix[pos.x][pos.y][pos.z]
 end
 
-function wesh.make_absolute(canvas_pos, canv_size, facedir, relative_pos)
-	-- relative positions range from (1, 1, 1) to (canv_size, canv_size, canv_size)
+function wesh.make_absolute(rel_pos, canvas)
+	-- relative positions range from (1, 1, 1) to (canvas.size, canvas.size, canvas.size)
 
 	-- shift relative to canvas node within canvas space
-	local shifted_pos = {}
-	shifted_pos.y = relative_pos.y - 1
-	shifted_pos.x = relative_pos.x - (canv_size / 2)
-	shifted_pos.z = relative_pos.z
+	local shifted_pos = {
+		x = rel_pos.x - (canvas.size / 2),
+		y = rel_pos.y - 1,
+		z = rel_pos.z,
+	}
 	
 	-- transform according to canvas facedir
-	local transformed_pos = wesh.transform(facedir, shifted_pos)
+	local transformed_pos = wesh.transform(canvas.facedir, shifted_pos)
 		
 	-- translate to absolute according to canvas position
-	local absolute_pos = vector.add(canvas_pos, transformed_pos)
+	local abs_pos = vector.add(canvas.pos, transformed_pos)
 		
-	return absolute_pos
+	return abs_pos
 end
 
 function wesh.set_voxel_color(pos, color)
@@ -1013,7 +1254,7 @@ function wesh.set_voxel_color(pos, color)
 end
 
 function wesh.node_to_voxel(rel_pos, canvas)
-	local abs_pos = wesh.make_absolute(canvas.pos, canvas.size, canvas.facedir, rel_pos)
+	local abs_pos = wesh.make_absolute(rel_pos, canvas)
 	local color = wesh.get_node_color(abs_pos)
 	if color ~= "air" then
 		canvas.voxel_count = canvas.voxel_count + 1

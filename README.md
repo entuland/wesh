@@ -48,7 +48,7 @@ In this space you can build anything you like by using colored wool blocks or mo
 
 Once you're done with your build, go to the Canvas block and right click it: you'll be asked to provide a name for your mesh (you can type any text in there, with uppercases and any symbol).
 
-Here you can also decide whether or not to generate a backup matrix and you can specify what variants you want your mesh to be available in.
+Here you can also decide whether or not to generate a backup matrix which you can later import to recreate the build, you can also specify what variants you want your mesh to be available in.
 
 Backup matrices are additional files that record your build's colors. The mod doesn't use them as of now, and even if it did, it would only allow you to rebuild your creation using wool blocks. These files can be safely omitted if you're not worried about rebuilding your creations (that is, if you don't dismantle them or if you don't care about recapturing them).
 
@@ -63,7 +63,7 @@ When you confirm the name for your capture (you can cancel it by hitting the ESC
 Upon saving a few temporary files will be created in the `/mod_storage/wesh_temp_obj_files` subfolder in your world's folder:
 - the `.obj` file will contain a model with your build scaled down to fit exactly one block
 - the `.obj.dat` file will contain the original name you have chosen for your mesh, along with some other data (read the section about using custom textures below)
-- if you have selected the `Generate backup matrix`, you'll also find a `.obj.matrix.dat` file which will contain a serialized version of your build, that may eventually get used to rebuild / reimport it in the game allowing you to alter it (as mentioned above, right now you can't import them and it only records your build's colors, so make sure you don't dismantle your build if you want to alter and capture it again)
+- if you have selected the `Generate backup matrix`, you'll also find a `.obj.matrix.dat` file which will contain a serialized version of your build which you can import later on (it only records your build's colors and importing them will result in only wool blocks getting placed at the moment)
 
 The above files are saved there only temporarily because mods don't have writing permission in their own folder while the world is running. In order to use your new meshes in the game you need to restart the world.
 
@@ -113,6 +113,8 @@ Three separate privileges are available:
 - `wesh_capture` limits the ability to create new meshes
 - `wesh_place` limits the ability to place created meshes in the world
 - `wesh_delete` limits the ability to delete meshes from disk
+- `wesh_import` limits the ability to import builds from `.obj.matrix.dat` files
+- `wesh_vacuum` limits the ability to destroy all nodes in the canvas range
 
 All of those privileges are granted to `singleplayer` by default.
 
@@ -139,6 +141,18 @@ When meshes get marked for deletion that information will go into the mod's stor
 Those deletions will not be performed until you enter _that_ world again.
 
 All meshes will be finally stored in the mod's folder - this means that _all_ worlds will end up sharing the _same_ meshes. If you delete any mesh in a world it will disappear for all worlds.
+
+# Dealing with matrices / combining them / using them as blueprints
+
+Matrix files record only the colors of your build and as such will only use wool blocks to rebuild your creations when imported.
+
+When importing a matrix file it must match the size of the canvas you're currently interacting with. If the size doesn't match, the mod will display a message in the chat saying that and will do nothing. I plan on improving this by storing the size of the matrix itself in the filename.
+
+You can combine different matrices together by importing them into the same canvas in sequence.
+
+You can also completely erase the canvas space using the "Vacuum Canvas" button, which will set all nodes to "air"
+
+Finally, matrices can be accessed and rebuilt immediately, without the need for restarting the world. This means that you can use this feature to blueprint something and rebuild it with wool blocks right away as many times as you want, then go to "Manage meshes" and delete such temporary capture to avoid adding any new meshes to your library.
 
 # Specifying custom properties
 In the `.obj.dat` file of each mesh you'll find something like this:
