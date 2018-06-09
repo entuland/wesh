@@ -510,7 +510,7 @@ function wesh._init_transforms()
 
 	-- directions
 	-- 	Y+
-    dir[0] = {{  1,  0,  0},
+	dir[0] = {{  1,  0,  0},
 	          {  0,  1,  0},
 	          {  0,  0,  1}}
     -- Z+
