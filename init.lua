@@ -553,7 +553,7 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 	local stored_matrices = wesh.filter_non_matrix(wesh.get_stored_files())
 	local temp_matrices = wesh.filter_non_matrix(wesh.get_temp_files())
 	
-	local matrices_list = state:listbox(0.5, 0.5, 7, 6.5, "matrices_list")	
+	local matrices_list = state:listbox(0.5, 0.5, 7, 5, "matrices_list")	
 	
 	for _, matrix_filename in pairs(stored_matrices) do
 		matrices_list:addItem(matrix_filename)
@@ -562,6 +562,12 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 	for _, matrix_filename in pairs(temp_matrices) do
 		matrices_list:addItem(matrix_filename)
 	end
+
+	local negative_check = state:checkbox(0.5, 6.2, "negative_check", "Invert")
+	local mononode_check = state:checkbox(2.3, 6.2, "mononode_check", "Mononode")
+	local nodename_field = state:field(4.5, 6.5, 3.5, 1, "nodename", "'modname:nodename' or 'air'")
+	nodename_field:setCloseOnEnter(false)
+	nodename_field:setText("air")
 
 	local import_button = state:button(0.5, 7.2, 3, 1, "import", "Import selected")
 	import_button:onClick(function()
@@ -580,21 +586,26 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 				break
 			end
 		end
-		
-		wesh.import_matrix(full_matrix_filename, state.player)
+		local negative = negative_check:getValue()
+		local mononode = mononode_check:getValue()
+		local nodename = nodename_field:getText()
+		if wesh.import_matrix(full_matrix_filename, state.player, negative, mononode, nodename) then
+			minetest.after(0, function()
+				minetest.close_formspec(state.player, "wesh.forms.import_matrix")
+			end)
+		end
 	end)
-	import_button:setClose(true)
 	
-	local done_button = state:button(4, 7.2, 2, 1, "done", "Done")
-	done_button:setClose(true)
+	local close_button = state:button(5.5, 7.2, 2, 1, "close", "Close")
+	close_button:setClose(true)
 end)
 
 wesh.forms.fill_canvas = smartfs.create("wesh.forms.fill_canvas", function(state)
 	state:size(6, 4)
 	
-	local nodename_field = state:field(0.5, 0.5, 5, 1, "nodename", "Fill with 'modname:nodename'")
-	nodename_field:setText("air")
+	local nodename_field = state:field(0.5, 0.5, 5, 1, "nodename", "'modname:nodename' or 'air'")
 	nodename_field:setCloseOnEnter(false)
+	nodename_field:setText("air")
 
 	local confirm_vacuum = state:button(0.5, 2, 4, 1, "confirm_vacuum", "Fill canvas")
 	confirm_vacuum:onClick(function()
@@ -1005,8 +1016,21 @@ function wesh.get_content_id(nodename)
 	return wesh.content_ids[nodename]
 end
 
-function wesh.import_matrix(full_matrix_filename, playername)
-	if not full_matrix_filename then return end
+function wesh.import_matrix(full_matrix_filename, playername, negative, mononode, nodename)
+	if not full_matrix_filename then 
+		wesh.notify(playername, "Please select a matrix to import")
+		return false
+	end
+	
+	local nodename_id = wesh.get_content_id(nodename)
+	
+	local invalid_nodename = (nodename_id == minetest.CONTENT_IGNORE) or (nodename_id == minetest.CONTENT_UNKNOWN)
+	
+	if invalid_nodename and (negative or mononode) then
+		wesh.notify(playername, "Unknown nodename: '" .. nodename .. "'")
+		return false
+	end
+	
 	local file = io.open(full_matrix_filename, "rb")
 	if not file then
 		wesh.notify(playername, "Unable to open file " .. full_matrix_filename)
@@ -1051,11 +1075,21 @@ function wesh.import_matrix(full_matrix_filename, playername)
 		for y = 1, #matrix[x] do
 			for z = 1, #matrix[x][y] do
 				local color = matrix[x][y][z]
-				if color ~= "air" then
+				local final_id = false
+								
+				if negative then
+					if color == "air" then
+						final_id = nodename_id
+					end
+				elseif color ~= "air" then
+					final_id = mononode and nodename_id or wesh.get_content_id("wool:" .. color)					
+				end
+				
+				if final_id then
 					local rel_pos = { x = x, y = y, z = z }
 					local abs_pos = wesh.make_absolute(rel_pos, canvas)
 					local vi = a:index(abs_pos.x, abs_pos.y, abs_pos.z)
-					data[vi] = wesh.get_content_id("wool:" .. color)
+					data[vi] = final_id
 				end
 			end
 		end

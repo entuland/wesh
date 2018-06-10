@@ -114,7 +114,7 @@ Three separate privileges are available:
 - `wesh_place` limits the ability to place created meshes in the world
 - `wesh_delete` limits the ability to delete meshes from disk
 - `wesh_import` limits the ability to import builds from `.obj.matrix.dat` files
-- `wesh_vacuum` limits the ability to destroy all nodes in the canvas range
+- `wesh_fill` limits the ability to fill the canvas with arbitrary nodes (including air)
 
 All of those privileges are granted to `singleplayer` by default.
 
@@ -150,7 +150,15 @@ When importing a matrix file it must match the size of the canvas you're current
 
 You can combine different matrices together by importing them into the same canvas in sequence.
 
-You can also completely erase the canvas space using the "Vacuum Canvas" button, which will set all nodes to "air"
+You can select three different modes to import the matrices:
+
+- Both `Invert` and `Mononode` unchecked: the matrix will be built normally according to the original colors
+- `Invert`: the negative version of the matrix will be filled with whatever node you enter in the textarea
+- `Mononode`: uses the entered nodename to import the matrix instead of the original colors
+
+`Mononode` can be checked or unchecked in `Invert` mode, it makes no difference. 
+
+You can also completely fill the canvas space using the `Fill/Empty Canvas` button with whatever node, including air.
 
 Finally, matrices can be accessed and rebuilt immediately, without the need for restarting the world. This means that you can use this feature to blueprint something and rebuild it with wool blocks right away as many times as you want, then go to "Manage meshes" and delete such temporary capture to avoid adding any new meshes to your library.
 
