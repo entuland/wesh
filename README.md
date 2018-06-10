@@ -144,7 +144,7 @@ All meshes will be finally stored in the mod's folder - this means that _all_ wo
 
 # Dealing with matrices
 
-Matrix files record only the colors of your build and as such will only use wool blocks to rebuild your creations when imported.
+Matrix files record only the colors of your build and as such will only use wool blocks to rebuild your creations when imported in normal mode. Other modes are explained here below.
 
 When importing a matrix file it must match the size of the canvas you're currently interacting with. If the size doesn't match, the mod will display a message in the chat saying that and will do nothing. I plan on improving this by storing the size of the matrix itself in the filename.
 
@@ -156,11 +156,17 @@ You can select three different modes to import the matrices:
 - `Invert`: the negative version of the matrix will be filled with whatever node you enter in the textarea
 - `Mononode`: uses the entered nodename to import the matrix instead of the original colors
 
-`Mononode` can be checked or unchecked in `Invert` mode, it makes no difference. 
+`Mononode` can be checked or unchecked in `Invert` mode, it makes no difference.
+
+![Import matrix](/screenshots/import-matrix.png)
 
 You can also completely fill the canvas space using the `Fill/Empty Canvas` button with whatever node, including air.
 
-Finally, matrices can be accessed and rebuilt immediately, without the need for restarting the world. This means that you can use this feature to blueprint something and rebuild it with wool blocks right away as many times as you want, then go to "Manage meshes" and delete such temporary capture to avoid adding any new meshes to your library.
+![Fill canvas](/screenshots/fill-canvas.png)
+
+Finally, matrices can be accessed and rebuilt immediately, without the need for restarting the world. This means that you can use this feature to blueprint something and rebuild it with wool blocks right away as many times as you want, then go to `Manage meshes` and delete such temporary capture to avoid adding any new meshes to your library.
+
+[Here are some examples](/examples.md) explaining how to use some of the above features.
 
 # Specifying custom properties
 In the `.obj.dat` file of each mesh you'll find something like this:
