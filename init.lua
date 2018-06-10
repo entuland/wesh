@@ -173,8 +173,8 @@ function wesh.init_privileges()
 		give_to_singleplayer = true,
 	})
 
-	minetest.register_privilege("wesh_vacuum", {
-		description = "Can disintegrate all blocks in the canvas space",
+	minetest.register_privilege("wesh_fill", {
+		description = "Can void the canvas or fill it with arbitrary nodes",
 		give_to_singleplayer = true,
 	})
 
@@ -372,7 +372,7 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	local delete_button = state:button(5, 2.2, 2, 0, "delete", "Manage\nMeshes")
 	local give_button = state:button(5, 3.2, 2, 0, "give", "Giveme\nMeshes")
 	local import_button = state:button(5, 4.2, 2, 0, "import", "Import\nMatrix")
-	local vacuum_button = state:button(5, 5.2, 2, 0, "vacuum", "Vacuum\nCanvas")
+	local vacuum_button = state:button(5, 5.2, 2, 0, "vacuum", "Fill/Erase\nCanvas")
 	
 	local max_faces = state:field(0.5, 6.5, 4, 1, "max_faces", "Max # faces, zero disables limit")
 	local cancel_button = state:button(5, 6.2, 2, 1, "cancel", "Cancel")
@@ -417,12 +417,12 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	end)
 	
 	vacuum_button:onClick(function(_, state)
-		if not minetest.get_player_privs(state.player).wesh_vacuum then
-			wesh.notify(state.player, "Insufficient privileges to vacuum canvas")
+		if not minetest.get_player_privs(state.player).wesh_fill then
+			wesh.notify(state.player, "Insufficient privileges to fill canvas")
 			return
 		end
 		minetest.after(0, function()
-			wesh.forms.vacuum_canvas:show(state.player)
+			wesh.forms.fill_canvas:show(state.player)
 		end)
 	end)
 
@@ -589,17 +589,23 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 	done_button:setClose(true)
 end)
 
-wesh.forms.vacuum_canvas = smartfs.create("wesh.forms.vacuum_canvas", function(state)
-	state:size(4, 3)
+wesh.forms.fill_canvas = smartfs.create("wesh.forms.fill_canvas", function(state)
+	state:size(6, 4)
 	
-	local confirm_vacuum = state:button(0.5, -1, 3, 4, "confirm_vacuum", "Yes, delete ALL NODES\nin the canvas range!")
+	local nodename_field = state:field(0.5, 0.5, 5, 1, "nodename", "Fill with 'modname:nodename'")
+	nodename_field:setText("air")
+	nodename_field:setCloseOnEnter(false)
+
+	local confirm_vacuum = state:button(0.5, 2, 4, 1, "confirm_vacuum", "Fill canvas")
 	confirm_vacuum:onClick(function()
-		wesh.vacuum_canvas(state.player)
-		wesh.notify(state.player, "Canvas vacuumed")
+		local nodename = nodename_field:getText()
+		if wesh.fill_canvas(state.player, nodename) then
+			wesh.notify(state.player, "Canvas filled with " .. nodename)
+		end
 	end)
 	confirm_vacuum:setClose(true)
 	
-	local cancel_button = state:button(0.5, 1, 3, 3, "cancel", "Cancel")
+	local cancel_button = state:button(0.5, 3, 4, 1, "cancel", "Cancel")
 	cancel_button:setClose(true)
 end)
 
@@ -1061,7 +1067,13 @@ function wesh.import_matrix(full_matrix_filename, playername)
 	return true
 end
 
-function wesh.vacuum_canvas(playername)
+function wesh.fill_canvas(playername, nodename)
+	local nodename_id = wesh.get_content_id(nodename)
+	
+	if nodename_id == minetest.CONTENT_IGNORE or nodename_id == minetest.CONTENT_UNKNOWN then
+		wesh.notify(playername, "Unknown nodename: '" .. nodename .. "'")
+		return false
+	end
 	
 	local canvas = wesh.player_canvas[playername]
 		
@@ -1076,7 +1088,6 @@ function wesh.vacuum_canvas(playername)
 	}
     
 	local data = vm:get_data()
-	local air_id = wesh.get_content_id("air")
 	
 	local min = wesh.axis_min(min_pos, max_pos)
 	local max = wesh.axis_max(min_pos, max_pos)
@@ -1085,7 +1096,7 @@ function wesh.vacuum_canvas(playername)
 		for y = min.y, max.y do
 			for z = min.z, max.z do
 				local vi = a:index(x, y, z)
-				data[vi] = air_id
+				data[vi] = nodename_id
 			end
 		end
 	end
@@ -1093,6 +1104,7 @@ function wesh.vacuum_canvas(playername)
 	vm:set_data(data)
 	vm:write_to_map(true)
 	
+	return true
 end
 
 -- ========================================================================
