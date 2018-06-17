@@ -340,17 +340,17 @@ function wesh.register_canvas_nodes()
 	minetest.register_alias("wesh:canvas", "wesh:canvas16")
 end
 
-function wesh.reset_geometry(canv_size)
-	wesh.matrix = {}
-	wesh.vertices = {}
-	wesh.vertices_indices = {}
-	wesh.faces = {}
+function wesh.reset_geometry(canvas)
+	canvas.matrix = {}
+	canvas.vertices = {}
+	canvas.vertices_indices = {}
+	canvas.faces = {}
 	local function reset(p)
-		if not wesh.matrix[p.x] then wesh.matrix[p.x] = {} end
-		if not wesh.matrix[p.x][p.y] then wesh.matrix[p.x][p.y] = {} end
-		wesh.matrix[p.x][p.y][p.z] = "air"	
+		if not canvas.matrix[p.x] then canvas.matrix[p.x] = {} end
+		if not canvas.matrix[p.x][p.y] then canvas.matrix[p.x][p.y] = {} end
+		canvas.matrix[p.x][p.y][p.z] = "air"	
 	end
-	wesh.traverse_matrix(reset, canv_size)
+	wesh.traverse_matrix(reset, canvas.size)
 end
 
 -- ========================================================================
@@ -675,6 +675,7 @@ function wesh.mesh_capture_confirmed(button_or_field, state)
 	if wesh.save_new_mesh(canvas, playername, meshname) then
 		minetest.close_formspec(playername, "wesh.forms.capture")
 	end
+	wesh.player_canvas[playername] = {}
 end
 
 function wesh.save_new_mesh(canvas, playername, description)
@@ -693,7 +694,7 @@ function wesh.save_new_mesh(canvas, playername, description)
 	end
 	
 	-- empty all helper variables
-	wesh.reset_geometry(canvas.size)
+	wesh.reset_geometry(canvas)
 	
 	canvas.voxel_count = 0
 	
@@ -717,9 +718,9 @@ function wesh.save_new_mesh(canvas, playername, description)
 	
 	-- this will be the actual content of the .obj file
 	local vt_section = wesh.vertex_textures
-	local v_section = wesh.vertices_to_string()
+	local v_section = wesh.vertices_to_string(canvas)
 	local vn_section = wesh.normals_to_string()
-	local f_section = table.concat(wesh.faces, "\n")
+	local f_section = table.concat(canvas.faces, "\n")
 	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
 	return wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
@@ -783,13 +784,13 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername,
 			wesh.notify(playername, "Unable to write to file '" .. matrix_data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
 			return false
 		end
-		file:write(minetest.serialize(wesh.matrix))
+		file:write(minetest.serialize(canvas.matrix))
 		file:close()
 	end
 	
 	wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "'")
 	wesh.notify(playername, "Reload the world to move newly created mesh to the mod folder")
-	wesh.notify(playername, "Mesh stats: " .. canvas.voxel_count .. " voxels, " .. #wesh.vertices .. " vertices, " .. #wesh.faces .. " faces")
+	wesh.notify(playername, "Mesh stats: " .. canvas.voxel_count .. " voxels, " .. #canvas.vertices .. " vertices, " .. #canvas.faces .. " faces")
 	return true
 end
 
@@ -1169,7 +1170,7 @@ function wesh.generate_secondary_boundaries(canvas)
 	canvas.boxes = {}
 	for index, boundary in ipairs(canvas.boundaries) do
 		canvas.boxes[index] = {}
-		wesh.traverse_matrix(wesh.update_secondary_collision_box, boundary, canvas.boxes[index])
+		wesh.traverse_matrix(wesh.update_secondary_collision_box, boundary, canvas.boxes[index], canvas)
 	end
 end
 
@@ -1285,10 +1286,10 @@ function wesh.update_collision_box(rel_pos, box)
 	end
 end
 
-function wesh.update_secondary_collision_box(rel_pos, box)
+function wesh.update_secondary_collision_box(rel_pos, box, canvas)
 	-- let the box shrink only if the subvoxel isn't empty
 	
-	if wesh.get_voxel_color(rel_pos) ~= "air" then
+	if wesh.get_voxel_color(rel_pos, canvas) ~= "air" then
 		wesh.update_collision_box(rel_pos, box)
 	end
 end
@@ -1305,14 +1306,14 @@ function wesh.construct_face(rel_pos, canvas, texture_vertices, facename, vertic
 	end
 	local normal = wesh.face_normals[normal_index]
 	local hider_pos = vector.add(rel_pos, normal)
-	if not out_of_bounds(hider_pos) and wesh.get_voxel_color(hider_pos) ~= "air" then return end
+	if not out_of_bounds(hider_pos) and wesh.get_voxel_color(hider_pos, canvas) ~= "air" then return end
 	local face_line = { "f " }
 	for i, vertex in ipairs(vertices) do
-		local index = wesh.get_vertex_index(rel_pos, canvas.size, vertex)
+		local index = wesh.get_vertex_index(rel_pos, canvas, vertex)
 		table.insert(face_line, index .. "/" .. texture_vertices[i] .. "/" .. normal_index .. " ")
 	end
-	table.insert(wesh.faces, table.concat(face_line))
-	if canvas.max_faces > 0 and #wesh.faces > canvas.max_faces then
+	table.insert(canvas.faces, table.concat(face_line))
+	if canvas.max_faces > 0 and #canvas.faces > canvas.max_faces then
 		error({ msg = canvas.max_faces .. " faces limit exceeded"})
 	end
 end
@@ -1330,18 +1331,18 @@ function wesh.get_texture_vertices(color)
 	return wesh.color_vertices[color]
 end
 
-function wesh.get_vertex_index(pos, canv_size, vertex_number)
+function wesh.get_vertex_index(pos, canvas, vertex_number)
 	-- get integral offset of vertices related to voxel center
 	local offset = wesh.cube_vertices[vertex_number]
 	
 	-- convert integral offset to real offset
-	offset = vector.multiply(offset, 1/canv_size/2)
+	offset = vector.multiply(offset, 1/canvas.size/2)
 	
-	-- scale voxel center from range 1~canv_size to range 1/canv_size ~ 1
-	pos = vector.divide(pos, canv_size)
+	-- scale voxel center from range 1~canvas.size to range 1/canvas.size ~ 1
+	pos = vector.divide(pos, canvas.size)
 		
 	-- center whole mesh around zero and shift it to make room for offsets
-	pos = vector.subtract(pos, 1/2 + 1/canv_size/2)
+	pos = vector.subtract(pos, 1/2 + 1/canvas.size/2)
 	
 	-- not really sure whether this should be done here,
 	-- but if I don't do this the resulting mesh will be wrongly mirrored
@@ -1352,17 +1353,17 @@ function wesh.get_vertex_index(pos, canv_size, vertex_number)
 	
 	-- bail out if this vertex already exists
 	local lookup = pos.x .. "," .. pos.y .. "," .. pos.z
-	if wesh.vertices_indices[lookup] then return wesh.vertices_indices[lookup] end
+	if canvas.vertices_indices[lookup] then return canvas.vertices_indices[lookup] end
 	
 	-- add the vertex to the list of needed ones
-	table.insert(wesh.vertices, pos)
-	wesh.vertices_indices[lookup] = #wesh.vertices
+	table.insert(canvas.vertices, pos)
+	canvas.vertices_indices[lookup] = #canvas.vertices
 	
-	return #wesh.vertices
+	return #canvas.vertices
 end
 
-function wesh.get_voxel_color(pos)
-	return wesh.matrix[pos.x][pos.y][pos.z]
+function wesh.get_voxel_color(pos, canvas)
+	return canvas.matrix[pos.x][pos.y][pos.z]
 end
 
 function wesh.make_absolute(rel_pos, canvas)
@@ -1384,9 +1385,9 @@ function wesh.make_absolute(rel_pos, canvas)
 	return abs_pos
 end
 
-function wesh.set_voxel_color(pos, color)
+function wesh.set_voxel_color(pos, color, canvas)
 	if not wesh.color_vertices[color] then color = "air" end
-	wesh.matrix[pos.x][pos.y][pos.z] = color
+	canvas.matrix[pos.x][pos.y][pos.z] = color
 end
 
 function wesh.node_to_voxel(rel_pos, canvas)
@@ -1396,7 +1397,7 @@ function wesh.node_to_voxel(rel_pos, canvas)
 		canvas.voxel_count = canvas.voxel_count + 1
 		wesh.update_collision_box(rel_pos, canvas.boundary)
 	end
-	wesh.set_voxel_color(rel_pos, color)
+	wesh.set_voxel_color(rel_pos, color, canvas)
 end
 
 function wesh.normals_to_string()
@@ -1408,7 +1409,7 @@ function wesh.normals_to_string()
 end
 
 function wesh.voxel_to_faces(rel_pos, canvas)
-	local color = wesh.get_voxel_color(rel_pos)
+	local color = wesh.get_voxel_color(rel_pos, canvas)
 	if color == "air" then return end
 	for facename, facedata in pairs(wesh.face_construction) do
 		local texture_vertices = wesh.get_texture_vertices(color)
@@ -1416,9 +1417,9 @@ function wesh.voxel_to_faces(rel_pos, canvas)
 	end
 end
 
-function wesh.vertices_to_string()
+function wesh.vertices_to_string(canvas)
 	local output = {}
-	for i, vertex in ipairs(wesh.vertices) do
+	for i, vertex in ipairs(canvas.vertices) do
 		table.insert(output, "v " .. vertex.x .. " " .. vertex.y .. " " .. vertex.z .. "\n")
 	end
 	return table.concat(output)
