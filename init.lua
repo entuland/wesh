@@ -1233,14 +1233,16 @@ function wesh.import_matrix(full_matrix_filename, playername, original, negative
 			for z = 1, #matrix_data[x][y] do
 				
 				local cell = matrix_data[x][y][z]
-				local param2 = 0
+				local param2 = false
 				
 				local final_id = false
 				
 				if original then 
 					if cell[1] ~= "air" then 
 						final_id = wesh.get_content_id(cell[1])
-						param2 = wesh.transform_facedir(canvas.facedir, cell[2] or 0)
+						if cell[2] then
+							param2 = wesh.transform_facedir(canvas.facedir, cell[2])
+						end
 					end
 				else
 					local color = cell
@@ -1258,7 +1260,7 @@ function wesh.import_matrix(full_matrix_filename, playername, original, negative
 					local abs_pos = wesh.make_absolute(rel_pos, canvas)
 					local vi = a:index(abs_pos.x, abs_pos.y, abs_pos.z)
 					data[vi] = final_id
-					if data2 then
+					if data2 and param2 then
 						data2[vi] = param2
 					end
 				end
