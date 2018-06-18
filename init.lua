@@ -11,8 +11,9 @@ wesh = {
 }
 
 wesh.models_path = wesh.mod_path .. "/models/"
-local smartfs = dofile(wesh.mod_path .. "/smartfs.lua")
 local storage = dofile(wesh.mod_path .. "/storage.lua")
+local matrix = dofile(wesh.mod_path .. "/lib/matrix.lua")
+local smartfs = dofile(wesh.mod_path .. "/lib/smartfs.lua")
 
 -- ========================================================================
 -- initialization functions
@@ -185,55 +186,92 @@ function wesh.init_transforms()
 	local dir = {}
 	
 	-- no rotation
-	rot[0] = {{  1,  0,  0},
-	          {  0,  1,  0},
-	          {  0,  0,  1}}
+	rot[0] = matrix{{  1,  0,  0},
+	                {  0,  1,  0},
+	                {  0,  0,  1}}
 	-- 90 degrees clockwise
-	rot[1] = {{  0,  0,  1},
-	          {  0,  1,  0},
-	          { -1,  0,  0}}
+	rot[1] = matrix{{  0,  0,  1},
+	                {  0,  1,  0},
+	                { -1,  0,  0}}
 	-- 180 degrees
-	rot[2] = {{ -1,  0,  0},
-	          {  0,  1,  0},
-	          {  0,  0, -1}}
+	rot[2] = matrix{{ -1,  0,  0},
+	                {  0,  1,  0},
+	                {  0,  0, -1}}
 	-- 270 degrees clockwise
-	rot[3] = {{  0,  0, -1},
-	          {  0,  1,  0},
-	          {  1,  0,  0}}
+	rot[3] = matrix{{  0,  0, -1},
+	                {  0,  1,  0},
+	                {  1,  0,  0}}
 
 	-- directions
 	-- Y+
-	dir[0] = {{  1,  0,  0},
-	          {  0,  1,  0},
-	          {  0,  0,  1}}
+	dir[0] = matrix{{  1,  0,  0},
+	                {  0,  1,  0},
+	                {  0,  0,  1}}
 	-- Z+
-	dir[1] = {{  1,  0,  0},
-	          {  0,  0, -1},
-	          {  0,  1,  0}}
+	dir[1] = matrix{{  1,  0,  0},
+	                {  0,  0, -1},
+	                {  0,  1,  0}}
 	-- Z-
-	dir[2] = {{  1,  0,  0},
-	          {  0,  0,  1},
-	          {  0, -1,  0}}
+	dir[2] = matrix{{  1,  0,  0},
+	                {  0,  0,  1},
+	                {  0, -1,  0}}
 	-- X+
-	dir[3] = {{  0,  1,  0},
-	          { -1,  0,  0},
-	          {  0,  0,  1}}
+	dir[3] = matrix{{  0,  1,  0},
+	                { -1,  0,  0},
+	                {  0,  0,  1}}
 	-- X-
-	dir[4] = {{  0, -1,  0},
-	          {  1,  0,  0},
-	          {  0,  0,  1}}
+	dir[4] = matrix{{  0, -1,  0},
+	                {  1,  0,  0},
+	                {  0,  0,  1}}
 	-- Y-
-	dir[5] = {{ -1,  0,  0},
-	          {  0, -1,  0},
-	          {  0,  0,  1}}
-	
-	wesh.facedir_transform = {}
+	dir[5] = matrix{{ -1,  0,  0},
+	                {  0, -1,  0},
+	                {  0,  0,  1}}
+
+	wesh._facedir_transform = {}
+	wesh._matrix_to_facedir = {}
 	
 	for facedir = 0, 23 do
 		local direction = math.floor(facedir / 4)
 		local rotation = facedir % 4
-		wesh.facedir_transform[facedir] = wesh.matrix_multiply(dir[direction], rot[rotation])
+		local transform = dir[direction] * rot[rotation] 
+		wesh._facedir_transform[facedir] = transform
+		wesh._matrix_to_facedir[transform:tostring():gsub("%-0", "0")] = facedir
 	end
+end
+
+function wesh.get_facedir_transform(facedir)
+	return wesh._facedir_transform[facedir] or wesh._facedir_transform[0]
+end
+
+function wesh.matrix_to_facedir(mtx)
+	local key = mtx:tostring():gsub("%-0", "0")
+	if not wesh._matrix_to_facedir[key] then
+		error("Unsupported matrix:\n" .. key)
+	end
+	return wesh._matrix_to_facedir[key]
+end
+
+function wesh.transform_facedir(canvas_facedir, node_facedir, invert_canvas)
+	if not wesh.transform_cache then
+		wesh.transform_cache = {}
+	end
+	
+	local cache_key = canvas_facedir .. "," .. node_facedir .. "," .. (invert_canvas and 1 or 0)
+	print(cache_key)
+	if not wesh.transform_cache[cache_key] then
+		local canvas_transform = wesh.get_facedir_transform(canvas_facedir)
+		local node_transform = wesh.get_facedir_transform(node_facedir)
+		if invert_canvas then
+			canvas_transform = canvas_transform:invert()
+		end
+		local transform =  canvas_transform * node_transform
+		wesh.transform_cache[cache_key] = wesh.matrix_to_facedir(transform)
+	end
+	
+	print(cache_key .. " == " .. wesh.transform_cache[cache_key])
+	
+	return wesh.transform_cache[cache_key]
 end
 
 function wesh.init_variants()
@@ -302,7 +340,7 @@ function wesh.register_canvas_nodes()
 			output = "wesh:canvas" .. size,
 			recipe = {
 				{"group:wool", "group:wool", "group:wool"},
-				{"group:wool", inner, "group:wool"},
+				{"group:wool", inner,        "group:wool"},
 				{"group:wool", "group:wool", "group:wool"},
 			}
 		})
@@ -336,20 +374,57 @@ function wesh.register_canvas_nodes()
 		wesh.valid_canvas_sizes[tonumber(size)] = true
 		register_canvas(index, size, inner)
 	end
-		
+	
 	minetest.register_alias("wesh:canvas", "wesh:canvas16")
+
+	minetest.register_craft({
+		output = "wesh:faces",
+		recipe = {
+			{"group:wool", "",           "group:wool"},
+			{"",           "group:wool", ""},
+			{"group:wool", "",           "group:wool"},
+		}
+	})
+	
+	minetest.register_node("wesh:faces", {
+		drawtype = "mesh",
+		mesh = "zzz_faces.obj",
+		tiles = { "faces-96x64.png" },
+		paramtype2 = "facedir",
+		description = "Woolen Mesh Orientation Block",
+		walkable = true,
+		groups = { snappy = 2, choppy = 2, oddly_breakable_by_hand = 3 },
+	})
+	
 end
 
 function wesh.reset_geometry(canvas)
 	canvas.matrix = {}
+	canvas.node_matrix = {}
 	canvas.vertices = {}
 	canvas.vertices_indices = {}
 	canvas.faces = {}
+	canvas.voxel_count = 0
+	canvas.nodename_count = 0
+	
 	local function reset(p)
-		if not canvas.matrix[p.x] then canvas.matrix[p.x] = {} end
-		if not canvas.matrix[p.x][p.y] then canvas.matrix[p.x][p.y] = {} end
+		if not canvas.matrix[p.x] then
+			canvas.matrix[p.x] = {}
+			canvas.node_matrix[p.x] = {}
+		end
+
+		if not canvas.matrix[p.x][p.y] then
+			canvas.matrix[p.x][p.y] = {}
+			canvas.node_matrix[p.x][p.y] = {}
+		end
+		
 		canvas.matrix[p.x][p.y][p.z] = "air"	
+		canvas.node_matrix[p.x][p.y][p.z] = {
+			name = "air",
+			param2 = 0,
+		}
 	end
+	
 	wesh.traverse_matrix(reset, canvas.size)
 end
 
@@ -548,12 +623,14 @@ wesh.forms.giveme_meshes = smartfs.create("wesh.forms.giveme_meshes", function(s
 end)
 
 wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(state)
-	state:size(8, 8)
+	state:size(8, 9)
 	
-	local stored_matrices = wesh.filter_non_matrix(wesh.get_stored_files())
-	local temp_matrices = wesh.filter_non_matrix(wesh.get_temp_files())
+	local canvas = wesh.player_canvas[state.player]
 	
-	local matrices_list = state:listbox(0.5, 0.5, 7, 5, "matrices_list")	
+	local stored_matrices = wesh.filter_non_matrix(wesh.get_stored_files(), canvas)
+	local temp_matrices = wesh.filter_non_matrix(wesh.get_temp_files(), canvas)
+	
+	local matrices_list = state:listbox(0.5, 0.5, 7, 4.5, "matrices_list")	
 	
 	for _, matrix_filename in pairs(stored_matrices) do
 		matrices_list:addItem(matrix_filename)
@@ -563,13 +640,33 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 		matrices_list:addItem(matrix_filename)
 	end
 
+	local original_check = state:checkbox(0.5, 5.2, "original_check", "Import original nodes (if available)")
+
 	local negative_check = state:checkbox(0.5, 6.2, "negative_check", "Invert")
+	
 	local mononode_check = state:checkbox(2.3, 6.2, "mononode_check", "Mononode")
+	
+	original_check:onToggle(function()
+		negative_check:setValue(false)
+		mononode_check:setValue(false)
+	end)
+	
+	negative_check:onToggle(function()
+		original_check:setValue(false)
+		mononode_check:setValue(false)
+	end)
+	
+	mononode_check:onToggle(function()
+		negative_check:setValue(false)
+		original_check:setValue(false)
+	end)
+	
 	local nodename_field = state:field(4.5, 6.5, 3.5, 1, "nodename", "'modname:nodename' or 'air'")
+	state:label(4.3, 7, "label_nodename", "('Invert' or 'Mononode' only)")
 	nodename_field:setCloseOnEnter(false)
 	nodename_field:setText("air")
 
-	local import_button = state:button(0.5, 7.2, 3, 1, "import", "Import selected")
+	local import_button = state:button(0.5, 8.2, 3, 1, "import", "Import selected")
 	import_button:onClick(function()
 		local full_matrix_filename = false
 		local selected_matrix_filename = matrices_list:getSelectedItem()
@@ -588,15 +685,16 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 		end
 		local negative = negative_check:getValue()
 		local mononode = mononode_check:getValue()
+		local original = original_check:getValue()
 		local nodename = nodename_field:getText()
-		if wesh.import_matrix(full_matrix_filename, state.player, negative, mononode, nodename) then
+		if wesh.import_matrix(full_matrix_filename, state.player, original, negative, mononode, nodename) then
 			minetest.after(0, function()
 				minetest.close_formspec(state.player, "wesh.forms.import_matrix")
 			end)
 		end
 	end)
 	
-	local close_button = state:button(5.5, 7.2, 2, 1, "close", "Close")
+	local close_button = state:button(5.5, 8.2, 2, 1, "close", "Close")
 	close_button:setClose(true)
 end)
 
@@ -675,7 +773,13 @@ function wesh.mesh_capture_confirmed(button_or_field, state)
 	if wesh.save_new_mesh(canvas, playername, meshname) then
 		minetest.close_formspec(playername, "wesh.forms.capture")
 	end
-	wesh.player_canvas[playername] = {}
+	
+	wesh.player_canvas[playername] = {
+		pos = canvas.pos,
+		facedir = canvas.facedir,
+		node = canvas.node,
+		size = canvas.size,
+	}
 end
 
 function wesh.save_new_mesh(canvas, playername, description)
@@ -695,33 +799,44 @@ function wesh.save_new_mesh(canvas, playername, description)
 	
 	-- empty all helper variables
 	wesh.reset_geometry(canvas)
-	
-	canvas.voxel_count = 0
-	
+		
 	-- read all nodes from the canvas space in the world
 	-- extract the colors and put them into a helper matrix of color voxels
 	-- generate primary boundary
 	wesh.traverse_matrix(wesh.node_to_voxel, canvas.size, canvas)
 	
-	-- generate secondary boundaries
-	wesh.generate_secondary_boundaries(canvas)
+	canvas.generate_obj = true
+	
+	local meshdata = ""
+	
+	if canvas.voxel_count == 0 then
+		canvas.generate_obj = false
+		if canvas.generate_matrix and canvas.nodename_count == 0 then
+			wesh.notify(playername, "Empty canvas, nothing to do")
+			return false
+		end
+		wesh.notify(playername, "WARNING: no 'colored' nodes found, mesh file will not be generated")
+	else
+		-- generate secondary boundaries
+		wesh.generate_secondary_boundaries(canvas)
+	
+		-- generate faces according to voxels
+		local success, err = pcall(function()
+			wesh.traverse_matrix(wesh.voxel_to_faces, canvas.size, canvas)
+		end)
 		
-	-- generate faces according to voxels
-	local success, err = pcall(function()
-		wesh.traverse_matrix(wesh.voxel_to_faces, canvas.size, canvas)
-	end)
-	
-	if not success then
-		wesh.notify(playername, err.msg)
-		return false
+		if not success then
+			wesh.notify(playername, err.msg)
+			return false
+		end
+		
+		-- this will be the actual content of the .obj file
+		local vt_section = wesh.vertex_textures
+		local v_section = wesh.vertices_to_string(canvas)
+		local vn_section = wesh.normals_to_string()
+		local f_section = table.concat(canvas.faces, "\n")
+		meshdata = vt_section .. v_section .. vn_section .. f_section
 	end
-	
-	-- this will be the actual content of the .obj file
-	local vt_section = wesh.vertex_textures
-	local v_section = wesh.vertices_to_string(canvas)
-	local vn_section = wesh.normals_to_string()
-	local f_section = table.concat(canvas.faces, "\n")
-	local meshdata = vt_section .. v_section .. vn_section .. f_section
 	
 	return wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
 end
@@ -754,43 +869,53 @@ end
 
 function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
 	
-	-- save .obj file
-	local full_filename = wesh.temp_path .. "/" .. obj_filename
-	local file, errmsg = io.open(full_filename, "wb")
-	if not file then
-		wesh.notify(playername, "Unable to write to file '" .. obj_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
-		return false
+	if canvas.generate_obj then
+		-- save .obj file
+		local full_filename = wesh.temp_path .. "/" .. obj_filename
+		local file, errmsg = io.open(full_filename, "wb")
+		if not file then
+			wesh.notify(playername, "Unable to write to file '" .. obj_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+			return false
+		end
+		file:write(meshdata)
+		file:close()
+		
+		-- save .dat file
+		local data_filename = obj_filename .. ".dat"
+		local full_data_filename = wesh.temp_path .. "/" .. data_filename
+		local file, errmsg = io.open(full_data_filename, "wb")
+		if not file then
+			wesh.notify(playername, "Unable to write to file '" .. data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+			return false
+		end
+		file:write(wesh.prepare_data_file(description, canvas))
+		file:close()
+		wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "'")
+		wesh.notify(playername, "Reload the world to move newly created mesh to the mod folder")
+		wesh.notify(playername, "Mesh stats: " .. canvas.voxel_count .. " voxels, " .. #canvas.vertices .. " vertices, " .. #canvas.faces .. " faces, " .. canvas.nodename_count .. " nodenames")
 	end
-	file:write(meshdata)
-	file:close()
-	
-	-- save .dat file
-	local data_filename = obj_filename .. ".dat"
-	local full_data_filename = wesh.temp_path .. "/" .. data_filename
-	local file, errmsg = io.open(full_data_filename, "wb")
-	if not file then
-		wesh.notify(playername, "Unable to write to file '" .. data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
-		return false
-	end
-	file:write(wesh.prepare_data_file(description, canvas))
-	file:close()
 	
 	if canvas.generate_matrix then
 		-- save .matrix.dat file
-		local matrix_data_filename = obj_filename .. ".matrix.dat"
+		local matrix_data_filename = obj_filename .. ".matrix" .. canvas.size .. ".dat"
 		local full_matrix_data_filename = wesh.temp_path .. "/" .. matrix_data_filename
 		local file, errmsg = io.open(full_matrix_data_filename, "wb")
 		if not file then
 			wesh.notify(playername, "Unable to write to file '" .. matrix_data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
 			return false
 		end
-		file:write(minetest.serialize(canvas.matrix))
+		
+		local matrix_data = {
+			colors = canvas.matrix,
+			nodes = canvas.node_matrix,
+		}
+		
+		file:write(minetest.serialize(matrix_data))
 		file:close()
+		wesh.notify(playername, "Matrix file saved to '" .. matrix_data_filename .. "' in '" .. wesh.temp_path .. "'")
+		wesh.notify(playername, "Reload the world to move newly created matrix to the mod folder")
 	end
 	
-	wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "'")
-	wesh.notify(playername, "Reload the world to move newly created mesh to the mod folder")
-	wesh.notify(playername, "Mesh stats: " .. canvas.voxel_count .. " voxels, " .. #canvas.vertices .. " vertices, " .. #canvas.faces .. " faces")
 	return true
 end
 
@@ -808,10 +933,10 @@ function wesh.filter_non_obj(filelist)
 	return list
 end
 
-function wesh.filter_non_matrix(filelist)
+function wesh.filter_non_matrix(filelist, canvas)
 	local list = {}
 	for _, filename in pairs(filelist) do
-		if wesh.is_valid_matrix_filename(filename) then
+		if wesh.is_valid_matrix_filename(filename, canvas) then
 			table.insert(list, filename)
 		end
 	end
@@ -861,8 +986,10 @@ function wesh.is_valid_obj_filename(obj_filename)
 	return obj_filename:match("^" .. wesh.gen_prefix .. ".-%.obj$")
 end
 
-function wesh.is_valid_matrix_filename(matrix_filename)
-	return matrix_filename:match("^" .. wesh.gen_prefix .. ".-%.obj%.matrix%.dat$")
+function wesh.is_valid_matrix_filename(matrix_filename, canvas)
+	local pattern = "^" .. wesh.gen_prefix .. ".-%.obj%.matrix(%d*)%.dat$"
+	local result = matrix_filename:match(pattern)
+	return tonumber(result) == canvas.size or result == ""
 end
 
 -- ========================================================================
@@ -907,7 +1034,10 @@ end
 function wesh.delete_obj_fileset(full_obj_filename)
 	os.remove(full_obj_filename)
 	os.remove(full_obj_filename .. ".dat")
-	os.remove(full_obj_filename .. ".matrix.dat")
+	os.remove(full_obj_filename .. ".matrix.dat")	
+	for size, _ in ipairs(wesh.valid_canvas_sizes) do
+		os.remove(full_obj_filename .. ".matrix" .. size .. ".dat")	
+	end
 end
 
 function wesh.delete_temp_obj(obj_filename)
@@ -1017,7 +1147,7 @@ function wesh.get_content_id(nodename)
 	return wesh.content_ids[nodename]
 end
 
-function wesh.import_matrix(full_matrix_filename, playername, negative, mononode, nodename)
+function wesh.import_matrix(full_matrix_filename, playername, original, negative, mononode, nodename)
 	if not full_matrix_filename then 
 		wesh.notify(playername, "Please select a matrix to import")
 		return false
@@ -1037,10 +1167,29 @@ function wesh.import_matrix(full_matrix_filename, playername, negative, mononode
 		wesh.notify(playername, "Unable to open file " .. full_matrix_filename)
 		return false
 	end
-	local matrix = minetest.deserialize(file:read("*all"))
-	if not matrix or type(matrix) ~= "table" then
+	
+	local matrix_all = minetest.deserialize(file:read("*all"))
+	
+	if not matrix_all or type(matrix_all) ~= "table" then
 		wesh.notify(playername, "Invalid matrix data inside " .. full_matrix_filename)
 		return false
+	end
+	
+	local matrix_data = matrix_all.colors or matrix_all
+	local matrix_nodes = matrix_all.nodes or false
+	
+	if not matrix_nodes and original then
+		wesh.notify(playername, "Old matrix without original nodes " .. full_matrix_filename)
+		return false
+	end
+	
+	if original and (negative or mononode) then
+		wesh.notify(playername, "Can't import ORIGINAL nodes in INVERT mode or in MONONODE mode")
+		return false
+	end
+	
+	if original then
+		matrix_data = matrix_nodes
 	end
 	
 	local canvas = wesh.player_canvas[playername]
@@ -1054,7 +1203,7 @@ function wesh.import_matrix(full_matrix_filename, playername, negative, mononode
 		return false
 	end
 	
-	if invalid_size("x", #matrix) or invalid_size("y", #matrix[1]) or invalid_size("z", #matrix[1][1]) then
+	if invalid_size("x", #matrix_data) or invalid_size("y", #matrix_data[1]) or invalid_size("z", #matrix_data[1][1]) then
 		return false
 	end
 	
@@ -1070,20 +1219,38 @@ function wesh.import_matrix(full_matrix_filename, playername, negative, mononode
 	}
     
 	local data = vm:get_data()
+	
+	local data2 = false
+	
+	if original then
+		data2 = vm:get_param2_data()
+	end
+	
 	local air_id = wesh.get_content_id("air")
 		
-	for x = 1, #matrix do
-		for y = 1, #matrix[x] do
-			for z = 1, #matrix[x][y] do
-				local color = matrix[x][y][z]
+	for x = 1, #matrix_data do
+		for y = 1, #matrix_data[x] do
+			for z = 1, #matrix_data[x][y] do
+				
+				local cell = matrix_data[x][y][z]
+				local param2 = 0
+				
 				local final_id = false
-								
-				if negative then
-					if color == "air" then
-						final_id = nodename_id
+				
+				if original then 
+					if cell[1] ~= "air" then 
+						final_id = wesh.get_content_id(cell[1])
+						param2 = wesh.transform_facedir(canvas.facedir, cell[2] or 0)
 					end
-				elseif color ~= "air" then
-					final_id = mononode and nodename_id or wesh.get_content_id("wool:" .. color)					
+				else
+					local color = cell
+					if negative then
+						if color == "air" then
+							final_id = nodename_id
+						end
+					elseif color ~= "air" then
+						final_id = mononode and nodename_id or wesh.get_content_id("wool:" .. color)					
+					end
 				end
 				
 				if final_id then
@@ -1091,12 +1258,20 @@ function wesh.import_matrix(full_matrix_filename, playername, negative, mononode
 					local abs_pos = wesh.make_absolute(rel_pos, canvas)
 					local vi = a:index(abs_pos.x, abs_pos.y, abs_pos.z)
 					data[vi] = final_id
+					if data2 then
+						data2[vi] = param2
+					end
 				end
 			end
 		end
 	end
 	
 	vm:set_data(data)
+	
+	if data2 then
+		vm:set_param2_data(data2)
+	end
+	
 	vm:write_to_map(true)
 	
 	return true
@@ -1318,12 +1493,6 @@ function wesh.construct_face(rel_pos, canvas, texture_vertices, facename, vertic
 	end
 end
 
-function wesh.get_node_color(pos)
-	local node = minetest.get_node_or_nil(pos)
-	if not node then return "air" end
-	return wesh.nodename_to_color[node.name] or "air"
-end
-
 function wesh.get_texture_vertices(color)
 	if not wesh.color_vertices[color] then
 		return wesh.color_vertices.air
@@ -1377,27 +1546,43 @@ function wesh.make_absolute(rel_pos, canvas)
 	}
 	
 	-- transform according to canvas facedir
-	local transformed_pos = wesh.transform(canvas.facedir, shifted_pos)
-		
+	local transformed_pos = wesh.apply_transform(shifted_pos, wesh.get_facedir_transform(canvas.facedir))
+	
 	-- translate to absolute according to canvas position
 	local abs_pos = vector.add(canvas.pos, transformed_pos)
 		
 	return abs_pos
 end
 
-function wesh.set_voxel_color(pos, color, canvas)
-	if not wesh.color_vertices[color] then color = "air" end
-	canvas.matrix[pos.x][pos.y][pos.z] = color
-end
-
 function wesh.node_to_voxel(rel_pos, canvas)
 	local abs_pos = wesh.make_absolute(rel_pos, canvas)
-	local color = wesh.get_node_color(abs_pos)
+	local node = minetest.get_node_or_nil(abs_pos)
+	
+	local nodedata = {
+		node and node.name or "air"
+	}
+		
+	local paramtype2 = node and wesh.get_nodedef_field(node.name, "paramtype2")
+
+	if paramtype2 == "facedir" then
+		nodedata[2] = wesh.transform_facedir(canvas.facedir, node.param2, true)
+	end
+	
+	local nodename = nodedata[1]
+	
+	local color = wesh.nodename_to_color[nodename] or "air"
+	
 	if color ~= "air" then
 		canvas.voxel_count = canvas.voxel_count + 1
 		wesh.update_collision_box(rel_pos, canvas.boundary)
 	end
-	wesh.set_voxel_color(rel_pos, color, canvas)
+	
+	if nodename ~= "air" then
+		canvas.nodename_count = canvas.nodename_count + 1
+	end
+	
+	canvas.matrix[rel_pos.x][rel_pos.y][rel_pos.z] = color
+	canvas.node_matrix[rel_pos.x][rel_pos.y][rel_pos.z] = nodedata
 end
 
 function wesh.normals_to_string()
@@ -1459,19 +1644,11 @@ function wesh.check_plain(text)
 	return text:gsub("[^%w]+", "_"):lower()
 end
 
-function wesh.matrix_multiply(a, b)
-	local res = {}
-	for row = 1, #a do
-		res[row] = {}
-		for col = 1, #b[1] do
-			local num = a[row][1] * b[1][col]
-			for i = 2, #a[1] do
-				num = num + a[row][i] * b[i][col]
-			end
-			res[row][col] = num
-		end
+function wesh.get_nodedef_field(nodename, fieldname)
+	if not minetest.registered_nodes[nodename] then
+		return nil
 	end
-	return res
+	return minetest.registered_nodes[nodename][fieldname]
 end
 
 function wesh.merge_tables(t1, t2)
@@ -1550,10 +1727,6 @@ function wesh.serialize(object, max_wrapping)
 	return "return " .. helper(object, max_wrapping)
 end
 
-function wesh.transform(facedir, pos)
-	return wesh.apply_transform(pos, wesh.facedir_transform[facedir])
-end
-
 function wesh.traverse_matrix(callback, boundary, ...)
 	if type(boundary) == "table" then
 		for x = boundary.min.x, boundary.max.x do
@@ -1573,5 +1746,6 @@ function wesh.traverse_matrix(callback, boundary, ...)
 		end
 	end
 end
+
 
 wesh.init()
