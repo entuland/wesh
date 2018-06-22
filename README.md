@@ -10,6 +10,8 @@ WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
 
 # Canvas recipes
 
+All recipes can be configured in `/custom.recipes.lua`, which will get created the first time the mod gets run and will never be overwritten.
+
     W = any wool block
     I = inner ingredient (see list below)
 
@@ -26,9 +28,9 @@ WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
 
 ![Canvas recipe](/screenshots/canvas-recipe.png)
 
-The largest canvas size is definitely able to crash your game or to create meshes too complex to be rendered if you try to grab too many nodes.
+The largest canvas size may likely create meshes too complex to be rendered if you try to grab too many nodes.
 
-For that reason, there is an optional limit for the amount of captured faces. That limit can be freely altered or disabled in the capture dialog. If you don't alter that limit the game shouldn't crash and should always generate working meshes.
+For that reason, there is an optional limit for the amount of captured faces. That limit can be freely altered or disabled in the capture dialog. If you don't alter that limit the game should always generate working meshes.
 
 # How to use
 
@@ -185,13 +187,13 @@ In the `.obj.dat` file of each mesh you'll find something like this:
 
 The variants used in each `.obj.dat` file depend on the ones you select in the interface at capture time.
 
-Default variants are stored in the file [default.nodevariants.lua](/default.nodevariants.lua) which gets copied over to `nodevariants.lua` when starting up the mod if no such file exists.
+Default variants are stored in the file [/default/nodevariants.lua](/default/nodevariants.lua) which gets copied over to `/custom.nodevariants.lua` when starting up the mod if no such file exists.
 
 Those variants will be the ones shown in the capture interface.
 
 In order to add a new variant simply add a line with your texture name and make sure you save such texture file in the `/textures` folder of the mod. You can also remove the lines you're not interested in and the mod will not generate those variants.
 
-You can do the above operation either on the `nodevariants.lua` file (it will affect all new captures) or in the `.obj.dat` file associated to each mesh (will affect only that mesh).
+You can do the above operation either on the `/custom.nodevariants.lua` file (it will affect all new captures) or in the `.obj.dat` file associated to each mesh (will affect only that mesh).
 
 For example, here we remove all but the `plain` version and add a custom one:
 
@@ -216,4 +218,4 @@ A couple considerations:
 
 # Changing default colors assigned to nodes
 
-The file [default.nodecolors.conf](/default.nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. This file will be copied over to `nodecolors.conf` at startup (if no such file exists); in `nodecolors.conf` you're free to alter existing colors and to add new nodes, just make sure you stick to wool colors cause any invalid color will be replaced by `air`. Do not store your changes into `default.nodecolors.conf` cause it will be overwritten updating the mod (and it wouldn't get used anyway if a `nodecolors.conf` file is there at all).
+The file [/default/nodecolors.conf](/default/nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. This file will be copied over to `/custom.nodecolors.conf` at startup (if no such file exists); in `/custom.nodecolors.conf` you're free to alter existing colors and to add new nodes, just make sure you stick to wool colors cause any invalid color will be replaced by `air`.

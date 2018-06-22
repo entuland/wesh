@@ -12,8 +12,53 @@ wesh = {
 
 wesh.models_path = wesh.mod_path .. "/models/"
 local storage = dofile(wesh.mod_path .. "/storage.lua")
-local matrix = dofile(wesh.mod_path .. "/lib/matrix.lua")
 local smartfs = dofile(wesh.mod_path .. "/lib/smartfs.lua")
+
+-- ========================================================================
+-- local helpers
+-- ========================================================================
+
+local function copy_file(source, dest)
+	local src_file = io.open(source, "rb")
+	if not src_file then 
+		return false, "copy_file() unable to open source for reading"
+	end
+	local src_data = src_file:read("*all")
+	src_file:close()
+
+	local dest_file = io.open(dest, "wb")
+	if not dest_file then 
+		return false, "copy_file() unable to open dest for writing"
+	end
+	dest_file:write(src_data)
+	dest_file:close()
+	return true, "files copied successfully"
+end
+
+local function custom_or_default(modname, path, filename)
+	local default_filename = "default/" .. filename
+	local full_filename = path .. "/custom." .. filename
+	local full_default_filename = path .. "/" .. default_filename
+	
+	os.rename(path .. "/" .. filename, full_filename)
+	
+	local file = io.open(full_filename, "rb")
+	if not file then
+		minetest.debug("[" .. modname .. "] Copying " .. default_filename .. " to " .. filename .. " (path: " .. path .. ")")
+		local success, err = copy_file(full_default_filename, full_filename)
+		if not success then
+			minetest.debug("[" .. modname .. "] " .. err)
+			return false
+		end
+		file = io.open(full_filename, "rb")
+		if not file then
+			minetest.debug("[" .. modname .. "] Unable to load " .. filename .. " file from path " .. path)
+			return false
+		end
+	end
+	file:close()
+	return full_filename
+end
 
 -- ========================================================================
 -- initialization functions
@@ -84,34 +129,22 @@ function wesh.init_colors()
 			wesh.nodename_to_color["wool:" .. color] = color
 		end
 	end
-	
-	local colors_filename = "nodecolors.conf"
-	local default_colors_filename = "default." .. colors_filename
-	local full_colors_filename = wesh.mod_path .. "/" .. colors_filename
-	local full_default_colors_filename = wesh.mod_path .. "/" .. default_colors_filename
-	
-	local file = io.open(full_colors_filename, "rb")
-	if not file then
-		minetest.debug("[wesh] Copying " .. default_colors_filename .. " to " .. colors_filename)
-		local success, err = wesh.copy_file(full_default_colors_filename, full_colors_filename)
-		if not success then
-			minetest.debug("[wesh] " .. err)
-			return
-		end
-		file = io.open(full_colors_filename, "rb")
-		if not file then
-			minetest.debug("[wesh] Unable to load " .. colors_filename .. " file from mod folder")
-			return
-		end
-	end
 
+	local full_colors_filename = custom_or_default(wesh.name, wesh.mod_path, "nodecolors.conf")
+	if not full_colors_filename then return end
+	local file = io.open(full_colors_filename, "rb")
+	if not file then return end
+	
 	--  The following loop will fill the nodename_to_color table with custom values
 	local content = file:read("*all")
 	local lines = content:gsub("(\r\n)+", "\r"):gsub("\r+", "\n"):split("\n")
 	for _, line in ipairs(lines) do
-		local parts = line:gsub("%s+", ""):split("=")
-		if #parts == 2 then
-			wesh.nodename_to_color[parts[1]] = parts[2]
+		line = line:gsub("%s+", "")
+		if line:sub(1,1) ~= "#" then 
+			local parts = line:split("=")
+			if #parts == 2 then
+				wesh.nodename_to_color[parts[1]] = parts[2]
+			end
 		end
 	end
 	file:close()
@@ -274,31 +307,18 @@ function wesh.transform_facedir(canvas_facedir, node_facedir, invert_canvas)
 	return wesh.transform_cache[cache_key]
 end
 
-function wesh.init_variants()
-	local variants_filename = "nodevariants.lua"
-	local default_variants_filename = "default." .. variants_filename
-	local full_variants_filename = wesh.mod_path .. "/" .. variants_filename
-	local full_default_variants_filename = wesh.mod_path .. "/" .. default_variants_filename
-	
-	local file = io.open(full_variants_filename, "rb")
-	if not file then
-		minetest.debug("[wesh] Copying " .. default_variants_filename .. " to " .. variants_filename)
-		local success, err = wesh.copy_file(full_default_variants_filename, full_variants_filename)
-		if not success then
-			minetest.debug("[wesh] " .. err)
-			return
-		end
-		file = io.open(full_variants_filename, "rb")
-		if not file then
-			minetest.debug("[wesh] Unable to load " .. variants_filename .. " file from mod folder")
-			return
-		end
-	end
-
-	local custom_variants = minetest.deserialize(file:read("*all"))	
+function wesh.init_variants()	
 	wesh.variants = {
 		plain = "plain-16.png",
 	}
+	local full_variants_filename = custom_or_default(wesh.name, wesh.mod_path, "nodevariants.lua")
+	if not full_variants_filename then return end
+	
+	local file = io.open(full_variants_filename, "rb")
+	if not file then return end
+	
+	local custom_variants = minetest.deserialize(file:read("*all"))	
+	file:close()
 	
 	-- ensure there is at least one valid variant in the custom variants
 	if custom_variants and type(custom_variants) == "table" then
@@ -309,7 +329,6 @@ function wesh.init_variants()
 			end
 		end
 	end
-	file:close()
 end
 
 function wesh.init_vertex_textures()
@@ -335,14 +354,10 @@ end
 
 function wesh.register_canvas_nodes()
 
-	local function register_canvas(index, size, inner)
+	local function register_canvas(index, size, recipe)
 		minetest.register_craft({
 			output = "wesh:canvas" .. size,
-			recipe = {
-				{"group:wool", "group:wool", "group:wool"},
-				{"group:wool", inner,        "group:wool"},
-				{"group:wool", "group:wool", "group:wool"},
-			}
+			recipe = recipe,
 		})
 		minetest.register_node("wesh:canvas" .. size, {
 			drawtype = "mesh",
@@ -357,45 +372,48 @@ function wesh.register_canvas_nodes()
 		})
 	end
 	
-	local canvas_sizes = {
-		{"02", "default:steel_ingot"},
-		{"04", "default:copper_ingot"},
-		{"08", "default:tin_ingot"},
-		{"16", "default:bronze_ingot"},
-		{"32", "default:gold_ingot"},
-		{"64", "default:diamond"},
-	}
-	
 	wesh.valid_canvas_sizes = {}
 	
-	for index, canvas_data in pairs(canvas_sizes) do
-		local size = canvas_data[1]
-		local inner = canvas_data[2]
-		wesh.valid_canvas_sizes[tonumber(size)] = true
-		register_canvas(index, size, inner)
+	local full_recipes_filename = custom_or_default(wesh.name, wesh.mod_path, "recipes.lua")
+	if not full_recipes_filename then return end
+	
+	local recipes = dofile(full_recipes_filename);
+	
+	if type(recipes) ~= "table" then
+		minetest.debug("[" .. wesh.name .. "] custom.recipes.lua is empty or malformed, all relative crafts will be disabled")
+		return
 	end
 	
-	minetest.register_alias("wesh:canvas", "wesh:canvas16")
-
-	minetest.register_craft({
-		output = "wesh:faces",
-		recipe = {
-			{"group:wool", "",           "group:wool"},
-			{"",           "group:wool", ""},
-			{"group:wool", "",           "group:wool"},
-		}
-	})
+	local canvas_sizes = { "02", "04", "08", "16", "32", "64" }
 	
-	minetest.register_node("wesh:faces", {
-		drawtype = "mesh",
-		mesh = "zzz_faces.obj",
-		tiles = { "faces-96x64.png" },
-		paramtype2 = "facedir",
-		description = "Woolen Mesh Orientation Block",
-		walkable = true,
-		groups = { snappy = 2, choppy = 2, oddly_breakable_by_hand = 3 },
-	})
+	for index, size in pairs(canvas_sizes) do
+		local recipe = recipes["wesh:canvas" .. size]
+		if recipe then
+			wesh.valid_canvas_sizes[tonumber(size)] = true
+			register_canvas(index, size, recipe)
+		end
+	end
 	
+	if wesh.valid_canvas_sizes["16"] then
+		minetest.register_alias("wesh:canvas", "wesh:canvas16")
+	end
+	
+	if recipes["wesh:faces"] then
+		minetest.register_craft({
+			output = "wesh:faces",
+			recipe = recipes["wesh:faces"],
+		})
+		
+		minetest.register_node("wesh:faces", {
+			drawtype = "mesh",
+			mesh = "zzz_faces.obj",
+			tiles = { "faces-96x64.png" },
+			paramtype2 = "facedir",
+			description = "Woolen Mesh Orientation Block",
+			walkable = true,
+			groups = { snappy = 2, choppy = 2, oddly_breakable_by_hand = 3 },
+		})
+	end
 end
 
 function wesh.reset_geometry(canvas)
@@ -868,7 +886,7 @@ function wesh.prepare_data_file(description, canvas)
 end
 
 function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
-	
+
 	if canvas.generate_obj then
 		-- save .obj file
 		local full_filename = wesh.temp_path .. "/" .. obj_filename
@@ -915,7 +933,7 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername,
 		wesh.notify(playername, "Matrix file saved to '" .. matrix_data_filename .. "' in '" .. wesh.temp_path .. "'")
 		wesh.notify(playername, "Reload the world to move newly created matrix to the mod folder")
 	end
-	
+
 	return true
 end
 
@@ -995,23 +1013,6 @@ end
 -- ========================================================================
 -- file movement / copy
 -- ========================================================================
-
-function wesh.copy_file(source, dest)
-	local src_file = io.open(source, "rb")
-	if not src_file then 
-		return false, "copy_file() unable to open source for reading"
-	end
-	local src_data = src_file:read("*all")
-	src_file:close()
-
-	local dest_file = io.open(dest, "wb")
-	if not dest_file then 
-		return false, "copy_file() unable to open dest for writing"
-	end
-	dest_file:write(src_data)
-	dest_file:close()
-	return true, "files copied successfully"
-end
 
 function wesh.move_temp_files()
 	local meshes = wesh.get_temp_files()
@@ -1748,6 +1749,5 @@ function wesh.traverse_matrix(callback, boundary, ...)
 		end
 	end
 end
-
 
 wesh.init()
