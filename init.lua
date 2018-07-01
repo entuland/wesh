@@ -291,7 +291,6 @@ function wesh.transform_facedir(canvas_facedir, node_facedir, invert_canvas)
 	end
 	
 	local cache_key = canvas_facedir .. "," .. node_facedir .. "," .. (invert_canvas and 1 or 0)
-	print(cache_key)
 	if not wesh.transform_cache[cache_key] then
 		local canvas_transform = wesh.get_facedir_transform(canvas_facedir)
 		local node_transform = wesh.get_facedir_transform(node_facedir)
@@ -301,8 +300,6 @@ function wesh.transform_facedir(canvas_facedir, node_facedir, invert_canvas)
 		local transform =  canvas_transform * node_transform
 		wesh.transform_cache[cache_key] = wesh.matrix_to_facedir(transform)
 	end
-	
-	print(cache_key .. " == " .. wesh.transform_cache[cache_key])
 	
 	return wesh.transform_cache[cache_key]
 end
