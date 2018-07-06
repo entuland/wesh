@@ -289,11 +289,13 @@ function wesh.transform_facedir(canvas_facedir, node_facedir, invert_canvas)
 	if not wesh.transform_cache then
 		wesh.transform_cache = {}
 	end
+	local rotation = node_facedir % 32 -- get first 5 bits
+	local remaining = node_facedir - rotation
+	local cache_key = canvas_facedir .. "," .. rotation .. "," .. (invert_canvas and 1 or 0)
 	
-	local cache_key = canvas_facedir .. "," .. node_facedir .. "," .. (invert_canvas and 1 or 0)
 	if not wesh.transform_cache[cache_key] then
 		local canvas_transform = wesh.get_facedir_transform(canvas_facedir)
-		local node_transform = wesh.get_facedir_transform(node_facedir)
+		local node_transform = wesh.get_facedir_transform(rotation)
 		if invert_canvas then
 			canvas_transform = canvas_transform:invert()
 		end
@@ -301,7 +303,7 @@ function wesh.transform_facedir(canvas_facedir, node_facedir, invert_canvas)
 		wesh.transform_cache[cache_key] = wesh.matrix_to_facedir(transform)
 	end
 	
-	return wesh.transform_cache[cache_key]
+	return wesh.transform_cache[cache_key] + remaining
 end
 
 function wesh.init_variants()	
@@ -1564,7 +1566,7 @@ function wesh.node_to_voxel(rel_pos, canvas)
 		
 	local paramtype2 = node and wesh.get_nodedef_field(node.name, "paramtype2")
 
-	if paramtype2 == "facedir" then
+	if paramtype2 == "facedir" or paramtype2 == "colorfacedir" then
 		nodedata[2] = wesh.transform_facedir(canvas.facedir, node.param2, true)
 	end
 	
