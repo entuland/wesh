@@ -117,6 +117,7 @@ function wesh.init_colors()
 	-- The same loop will also fill the nodename_to_color table with default fallbacks for wool
 
 	wesh.nodename_to_color = {}
+	wesh.nodename_to_rgb = {}
 	wesh.color_vertices = {}
 	for i, color in ipairs(wesh.colors) do
 		local t = {}
@@ -149,6 +150,25 @@ function wesh.init_colors()
 	end
 	file:close()
 
+	local full_rgb_filename = custom_or_default(wesh.name, wesh.mod_path, "colors.txt")
+	if not full_rgb_filename then return end
+	local rgb_file = io.open(full_rgb_filename, "rb")
+	if not rgb_file then return end
+	
+	--  The following loop will fill the nodename_to_rgb table with custom values
+	local rgb_content = rgb_file:read("*all")
+	local rgb_lines = rgb_content:gsub("(\r\n)+", "\r"):gsub("\r+", "\n"):split("\n")
+	for _, line in ipairs(rgb_lines) do
+		line = line:gsub("%s+", " ")
+		if line:sub(1,1) ~= "#" then 
+			local parts = line:split(" ")
+			if #parts == 4 then
+				wesh.nodename_to_rgb[parts[1]] = { tonumber(parts[2]), tonumber(parts[3]), tonumber(parts[4]) }
+			end
+		end
+	end
+	rgb_file:close()
+	
 end
 
 function wesh.init_geometry()
@@ -417,24 +437,30 @@ end
 
 function wesh.reset_geometry(canvas)
 	canvas.matrix = {}
+	canvas.wool_matrix = {}
 	canvas.node_matrix = {}
 	canvas.vertices = {}
 	canvas.vertices_indices = {}
 	canvas.faces = {}
 	canvas.voxel_count = 0
 	canvas.nodename_count = 0
+	canvas.custom_texture_vertices_mapping = {}
+	canvas.custom_texture_colors = {}
 	
 	local function reset(p)
 		if not canvas.matrix[p.x] then
 			canvas.matrix[p.x] = {}
+			canvas.wool_matrix[p.x] = {}
 			canvas.node_matrix[p.x] = {}
 		end
 
 		if not canvas.matrix[p.x][p.y] then
 			canvas.matrix[p.x][p.y] = {}
+			canvas.wool_matrix[p.x][p.y] = {}
 			canvas.node_matrix[p.x][p.y] = {}
 		end
 		
+		canvas.wool_matrix[p.x][p.y][p.z] = "air"	
 		canvas.matrix[p.x][p.y][p.z] = "air"	
 		canvas.node_matrix[p.x][p.y][p.z] = {
 			name = "air",
@@ -456,10 +482,11 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	local capture_button = state:button(5, 0.2, 2, 1, "capture", "Capture")
 	
 	state:checkbox(0.5, 1, "generate_matrix", "Generate backup matrix"):setValue(true)
+	state:checkbox(0.5, 1.5, "ignore_variants", "Ignore variants, use RGB"):setValue(true)
 	
-	state:label(0.5, 2, "label_variants", "Select one or more variants:")
+	state:label(0.5, 2.5, "label_variants", "Select one or more variants:")
 	local variants_x = 0.5
-	local variants_y = 2.5
+	local variants_y = 3
 	
 	local delete_button = state:button(5, 2.2, 2, 0, "delete", "Manage\nMeshes")
 	local give_button = state:button(5, 3.2, 2, 0, "give", "Giveme\nMeshes")
@@ -771,21 +798,27 @@ function wesh.mesh_capture_confirmed(button_or_field, state)
 	canvas.generate_matrix = state:get("generate_matrix"):getValue()
 	canvas.max_faces = tonumber(state:get("max_faces"):getText()) or wesh.default_max_faces
 	
+	canvas.ignore_variants = state:get("ignore_variants"):getValue()
+	
 	canvas.chosen_variants = {}
 	
-	local no_variants = true
-	for name, texture in pairs(wesh.variants) do
-		if state:get("variant_" .. name):getValue() then
-			canvas.chosen_variants[name] = texture
-			no_variants = false
+	if not canvas.ignore_variants then
+	
+		local no_variants = true
+		for name, texture in pairs(wesh.variants) do
+			if state:get("variant_" .. name):getValue() then
+				canvas.chosen_variants[name] = texture
+				no_variants = false
+			end
 		end
+		
+		if no_variants then
+			wesh.notify(playername, "Please choose at least one variant")
+			return
+		end
+
 	end
 	
-	if no_variants then
-		wesh.notify(playername, "Please choose at least one variant")
-		return
-	end
-
 	canvas.boundary = {}
 	if wesh.save_new_mesh(canvas, playername, meshname) then
 		minetest.close_formspec(playername, "wesh.forms.capture")
@@ -849,13 +882,48 @@ function wesh.save_new_mesh(canvas, playername, description)
 		
 		-- this will be the actual content of the .obj file
 		local vt_section = wesh.vertex_textures
+		
+		if canvas.ignore_variants then
+			vt_section = wesh.generate_custom_vt(canvas)
+		end
+		
 		local v_section = wesh.vertices_to_string(canvas)
 		local vn_section = wesh.normals_to_string()
-		local f_section = table.concat(canvas.faces, "\n")
+		local f_section = table.concat(canvas.faces)
 		meshdata = vt_section .. v_section .. vn_section .. f_section
 	end
 	
 	return wesh.save_mesh_to_file(obj_filename, meshdata, description, playername, canvas)
+end
+
+function wesh.color_to_hex(color)
+	local r = string.format("%x", color[1]) 
+	local g = string.format("%x", color[2]) 
+	local b = string.format("%x", color[3])
+	if #r + #g + #b ~= 3 then
+		r = #r == 1 and "0" .. r or r
+		g = #g == 1 and "0" .. g or g
+		b = #b == 1 and "0" .. b or b
+	end
+	return r .. g .. b
+end
+
+function wesh.generate_custom_vt(canvas)
+	local vt_section = {}
+	local tile_strings = {}
+	local colors = canvas.custom_texture_colors
+	table.insert(tile_strings, "[combine:" .. #colors .. "x1")
+	local step = 1 / #colors
+	local gap = step / 100
+	for i, color in ipairs(colors) do
+		table.insert(vt_section, "vt " .. step * (i - 1) + gap .. "\n")
+		table.insert(vt_section, "vt " .. step * i - gap .. "\n")
+		table.insert(tile_strings, ":" .. (i - 1) .. ",0=(px.png\\^[colorize\\:#" .. wesh.color_to_hex(color) .. ")")
+	end
+	
+	canvas.tile_string = table.concat(tile_strings)
+	
+	return table.concat(vt_section)
 end
 
 -- ========================================================================
@@ -881,6 +949,9 @@ function wesh.prepare_data_file(description, canvas)
 			fixed = boxes,
 		}
 	}
+	if canvas.ignore_variants then
+		data.variants = { rgb = canvas.tile_string }
+	end
 	return wesh.serialize(data, 2)
 end
 
@@ -923,7 +994,7 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername,
 		end
 		
 		local matrix_data = {
-			colors = canvas.matrix,
+			colors = canvas.wool_matrix,
 			nodes = canvas.node_matrix,
 		}
 		
@@ -1489,7 +1560,7 @@ function wesh.construct_face(rel_pos, canvas, texture_vertices, facename, vertic
 		local index = wesh.get_vertex_index(rel_pos, canvas, vertex)
 		table.insert(face_line, index .. "/" .. texture_vertices[i] .. "/" .. normal_index .. " ")
 	end
-	table.insert(canvas.faces, table.concat(face_line))
+	table.insert(canvas.faces, table.concat(face_line) .. "\n")
 	if canvas.max_faces > 0 and #canvas.faces > canvas.max_faces then
 		error({ msg = canvas.max_faces .. " faces limit exceeded"})
 	end
@@ -1497,9 +1568,31 @@ end
 
 function wesh.get_texture_vertices(color)
 	if not wesh.color_vertices[color] then
-		return wesh.color_vertices.air
+		error({ msg = "unable to find color " .. dump(color) .. " in wesh.color_vertices"})
 	end
 	return wesh.color_vertices[color]
+end
+
+function wesh.get_custom_texture_vertices(color, canvas)
+	if type(color) ~= "table" then
+		error({ msg = "passed color variable " .. dump(color) .. " isn't a table"})
+	end
+	
+	if #color ~= 3 then
+		error({ msg = "bad length of color table " .. dump(color)})	
+	end
+	
+	local index = table.concat(color, "-")
+	local vi = canvas.custom_texture_vertices_mapping[index]
+	
+	if not vi then
+		vi = #canvas.custom_texture_colors * 2 + 1
+		table.insert(canvas.custom_texture_colors, color)
+		canvas.custom_texture_vertices_mapping[index] = vi
+	end
+	
+	return {vi, vi, vi + 1, vi + 1}
+	
 end
 
 function wesh.get_vertex_index(pos, canvas, vertex_number)
@@ -1572,7 +1665,16 @@ function wesh.node_to_voxel(rel_pos, canvas)
 	
 	local nodename = nodedata[1]
 	
-	local color = wesh.nodename_to_color[nodename] or "air"
+	local color = ""
+
+	local rgb_color = wesh.nodename_to_rgb[nodename] or "air"
+	local wool_color = wesh.nodename_to_color[nodename] or "air"
+	
+	if canvas.ignore_variants then
+		color = rgb_color
+	else
+		color = wool_color
+	end
 	
 	if color ~= "air" then
 		canvas.voxel_count = canvas.voxel_count + 1
@@ -1583,6 +1685,7 @@ function wesh.node_to_voxel(rel_pos, canvas)
 		canvas.nodename_count = canvas.nodename_count + 1
 	end
 	
+	canvas.wool_matrix[rel_pos.x][rel_pos.y][rel_pos.z] = wool_color
 	canvas.matrix[rel_pos.x][rel_pos.y][rel_pos.z] = color
 	canvas.node_matrix[rel_pos.x][rel_pos.y][rel_pos.z] = nodedata
 end
@@ -1599,7 +1702,12 @@ function wesh.voxel_to_faces(rel_pos, canvas)
 	local color = wesh.get_voxel_color(rel_pos, canvas)
 	if color == "air" then return end
 	for facename, facedata in pairs(wesh.face_construction) do
-		local texture_vertices = wesh.get_texture_vertices(color)
+		local texture_vertices = ""
+		if canvas.ignore_variants then
+			texture_vertices = wesh.get_custom_texture_vertices(color, canvas)
+		else
+			texture_vertices = wesh.get_texture_vertices(color)
+		end
 		wesh.construct_face(rel_pos, canvas, texture_vertices, facename, facedata.vertices, facedata.normal)		
 	end
 end
