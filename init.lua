@@ -482,7 +482,7 @@ wesh.forms.capture = smartfs.create("wesh.forms.capture", function(state)
 	local capture_button = state:button(5, 0.2, 2, 1, "capture", "Capture")
 	
 	state:checkbox(0.5, 1, "generate_matrix", "Generate backup matrix"):setValue(true)
-	state:checkbox(0.5, 1.5, "ignore_variants", "Ignore variants, use RGB"):setValue(true)
+	state:checkbox(0.5, 1.5, "ignore_variants", "Ignore variants, use RGB")
 	
 	state:label(0.5, 2.5, "label_variants", "Select one or more variants:")
 	local variants_x = 0.5

@@ -52,7 +52,7 @@ Once you're done with your build, go to the Canvas block and right click it: you
 
 Here you can also decide whether or not to generate a backup matrix which you can later import to recreate the build, you can also specify what variants you want your mesh to be available in.
 
-Backup matrices are additional files that record your build's colors. The mod doesn't use them as of now, and even if it did, it would only allow you to rebuild your creation using wool blocks. These files can be safely omitted if you're not worried about rebuilding your creations (that is, if you don't dismantle them or if you don't care about recapturing them).
+Backup matrices are additional files that record your build's nodes and colors. They can be used to rebuild the captures with the original nodes or as wool depending on their matching colors. These files can be safely omitted if you're not worried about rebuilding your creations (that is, if you don't dismantle them or if you don't care about recapturing them).
 
 This capture interface also gives you access to the `Manage Meshes` and the `Giveme Meshes` interfaces, which will be covered later on in this documentation:
 
@@ -73,7 +73,9 @@ During world startup the mod will move all the temporary files to the `/models` 
 
 You can't have two meshes with the same name (during the saving process the mod checks both the temporary meshes that haven't been loaded yet and those that have been already moved to the mod's folder).
 
-By default, four versions of each mesh will be available (which you can toggle in the interface for each capture):
+By default, four versions of each mesh will be available (which you can toggle in the interface for each capture).
+
+You can optionally ignore variants and create meshes that rely on RGB colors, more about that in the [RGB Colors](#rgb-colors) section.
 
 - plain versions: they use flat colors averaged from the colors of each wool block, with a bordered variant
 
@@ -108,6 +110,35 @@ The above names can be used with the `/give` and `/giveme` commands as well
 If you're playing in creative mode all such meshes, including all canvases, show up if you filter for either `wesh` or `mesh`:
 
 ![Creative search](/screenshots/creative-search.png)
+
+# RGB colors
+
+One of the latest additions to this mod has been allowing the capture of nodes using RGB colors specified in the [/default/colors.txt](/default/colors.txt) file (duped to `/custom.colors.txt` for customization) - this file has been taken from [Minetest Mapper](https://github.com/minetest/minetestmapper/blob/master/colors.txt).
+
+(discussion about this new RGB feature [here](https://github.com/entuland/wesh/issues/6))
+
+Selecting the `Ignore variants, use RGB` option in the capture screen will result in a mesh using a custom palette, built on the fly, that looks like this...
+
+```
+variants = {
+  rgb = "[combine:4x1:0,0=(px.png\\^[colorize\\:#42701f):1,0=(px.png\\^[colorize\\:#6c9343):2,0=(px.png\\^[colorize\\:#5f4027):3,0=(px.png\\^[colorize\\:#763018)",
+},
+```
+
+...instead of the regular variants:
+
+```
+variants = {
+  wool = "wool-72.png",
+  plain = "plain-16.png",
+  plainborder = "plain-border-72.png",
+  woolborder = "wool-border-72.png",
+},
+```
+
+This RGB palette is *not* compatible with the regular variants and you cannot use RGB meshes with the normal palettes - more about variants in the [Custom properties](#specifying-custom-properties) section.
+
+If you want to have the same mesh with RBB custom palette *and* with the usual variants you need to capture it twice with different names.
 
 # Privileges
 
@@ -173,15 +204,17 @@ Finally, matrices can be accessed and rebuilt immediately, without the need for 
 # Specifying custom properties
 In the `.obj.dat` file of each mesh you'll find something like this:
 
-    return {
-        description = "Your mesh name",
-        variants = {
-            plain = "plain-16.png",
-            plainborder = "plain-border-72.png",
-            wool = "wool-72.png",
-            woolborder = "wool-border-72.png",
-        },
-    }
+```
+return {
+    description = "Your mesh name",
+    variants = {
+        plain = "plain-16.png",
+        plainborder = "plain-border-72.png",
+        wool = "wool-72.png",
+        woolborder = "wool-border-72.png",
+    },
+}
+```
 
 (please consider that the number `16` here above indicates the size of the texture, it has nothing to do with the size of the canvas you use to capture your build)
 
@@ -209,6 +242,8 @@ The above doesn't depend on variants available in `nodevariants.lua` - as long a
 
 Have a look at `wool-72.png` to see where each color goes, or use the included [textures-72.xcf](/textures/textures-72.xcf) file (GIMP format) which has layers for adding the borders as well.
 
+As explained in [RGB Colors](#rgb-colors), the regular variants and the RGB custom palette are not compatible. You cannot add regular variants to the `.obj.dat` file of a mesh captured in RGB mode, and you cannot add a custom RGB palette to a mesh captured using the regular variants. If you need both modes, capture the mesh twice with different names.
+
 You can as well override any property you would normally pass to node_register(), such as `walkable`, `groups`, `collision_box`, `selection_box` and so forth. The only property that doesn't get really overridden but just _mangled_ according to the variants is the `description` one. You shouldn't even be overriding `tiles` cause they will be built according to the `variants` property (property which is specific to this mod's `.obj.dat` files).
 
 A couple considerations:
@@ -219,3 +254,5 @@ A couple considerations:
 # Changing default colors assigned to nodes
 
 The file [/default/nodecolors.conf](/default/nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. This file will be copied over to `/custom.nodecolors.conf` at startup (if no such file exists); in `/custom.nodecolors.conf` you're free to alter existing colors and to add new nodes, just make sure you stick to wool colors cause any invalid color will be replaced by `air`.
+
+In RGB mode the colors are determined by [/default/colors.txt](/default/colors.txt), which gets duped at startup to `/custom.colors.txt` for customization. This file uses a different format `modname:nodename R G B` where R, G and B are *decimal* integers ranging from zero to 255.
