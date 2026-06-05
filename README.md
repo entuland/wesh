@@ -111,7 +111,7 @@ If you're playing in creative mode all such meshes, including all canvases, show
 
 # RGB colors
 
-One of the latest additions to this mod has been allowing the capture of nodes using RGB colors specified in the [/default/colors.txt](/default/colors.txt) file (duped to `/custom.colors.txt` for customization) - this file has been taken from [Minetest Mapper](https://github.com/minetest/minetestmapper/blob/master/colors.txt).
+One of the latest additions to this mod has been allowing the capture of nodes using RGB colors specified in the [/default/colors.txt](/default/colors.txt) file (duped to `[luanti root]/mod_data/wesh/custom.colors.txt` for customization) - this file has been taken from [Minetest Mapper](https://github.com/minetest/minetestmapper/blob/master/colors.txt).
 
 (discussion about this new RGB feature [here](https://github.com/entuland/wesh/issues/6))
 
@@ -214,13 +214,13 @@ return {
 
 The variants used in each `.obj.dat` file depend on the ones you select in the interface at capture time.
 
-Default variants are stored in the file [/default/nodevariants.lua](/default/nodevariants.lua) which gets copied over to `/custom.nodevariants.lua` when starting up the mod if no such file exists.
+Default variants are stored in the file [/default/nodevariants.lua](/default/nodevariants.lua) which gets copied over to `[luanti root]/mod_data/wesh/custom.nodevariants.lua` when starting up the mod if no such file exists.
 
 Those variants will be the ones shown in the capture interface.
 
 In order to add a new variant simply add a line with your texture name and make sure you save such texture file in the `/textures` folder of the mod. You can also remove the lines you're not interested in and the mod will not generate those variants.
 
-You can do the above operation either on the `/custom.nodevariants.lua` file (it will affect all new captures) or in the `.obj.dat` file associated to each mesh (will affect only that mesh).
+You can do the above operation either on the `[luanti root]/mod_data/wesh/custom.nodevariants.lua` file (it will affect all new captures) or in the `.obj.dat` file associated to each mesh (will affect only that mesh).
 
 For example, here we remove all but the `plain` version and add a custom one:
 
@@ -247,6 +247,6 @@ A couple considerations:
 
 # Changing default colors assigned to nodes
 
-The file [/default/nodecolors.conf](/default/nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. This file will be copied over to `/custom.nodecolors.conf` at startup (if no such file exists); in `/custom.nodecolors.conf` you're free to alter existing colors and to add new nodes, just make sure you stick to wool colors cause any invalid color will be replaced by `air`.
+The file [/default/nodecolors.conf](/default/nodecolors.conf) contains the `modname:nodename = color` associations for all the nodes that get loaded in a minetest_game world. This file will be copied over to `[luanti root]/mod_data/wesh/custom.nodecolors.conf` at startup (if no such file exists); in `[luanti root]/mod_data/wesh/custom.nodecolors.conf` you're free to alter existing colors and to add new nodes, just make sure you stick to wool colors cause any invalid color will be replaced by `air`.
 
-In RGB mode the colors are determined by [/default/colors.txt](/default/colors.txt), which gets duped at startup to `/custom.colors.txt` for customization. This file uses a different format `modname:nodename R G B` where R, G and B are *decimal* integers ranging from zero to 255.
+In RGB mode the colors are determined by [/default/colors.txt](/default/colors.txt), which gets duped at startup to `[luanti root]/mod_data/wesh/custom.colors.txt` for customization. This file uses a different format `modname:nodename R G B` where R, G and B are *decimal* integers ranging from zero to 255.
