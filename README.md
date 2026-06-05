@@ -1,8 +1,8 @@
-# Woolen Meshes (wesh)
+# Woolen Meshes (wesh) v1.2
 
 An in-game mesh creator for Minetest
 
-Developed and tested on Minetest 0.4.16 - try in other versions at your own risk :)
+Developed and tested on Minetest 0.4.16 - last version tested on Luanti 5.16.0 - try in other versions at your own risk :)
 
 If you like my contributions you may consider reading http://entuland.com/en/support-entuland
 
@@ -10,7 +10,7 @@ WIP MOD forum thread: https://forum.minetest.net/viewtopic.php?f=9&t=20115
 
 # Canvas recipes
 
-All recipes can be configured in `/custom.recipes.lua`, which will get created the first time the mod gets run and will never be overwritten.
+All recipes can be configured in `[luanti root]/mod_data/wesh/custom.recipes.lua`, which will get created the first time the mod gets run and will never be overwritten.
 
     W = any wool block
     I = inner ingredient (see list below)
@@ -62,16 +62,14 @@ When you confirm the name for your capture (you can cancel it by hitting the ESC
 
 ![Save confirmation](/screenshots/save-confirm.png)
 
-Upon saving a few temporary files will be created in the `/mod_storage/wesh_temp_obj_files` subfolder in your world's folder:
+Files will be created in  `[luanti root]/mod_data/wesh/models`:
 - the `.obj` file will contain a model with your build scaled down to fit exactly one block
 - the `.obj.dat` file will contain the original name you have chosen for your mesh, along with some other data (read the section about using custom textures below)
 - if you have selected the `Generate backup matrix`, you'll also find a `.obj.matrix.dat` file which will contain a serialized version of your build which you can import later on (it only records your build's colors and importing them will result in only wool blocks getting placed at the moment)
 
-The above files are saved there only temporarily because mods don't have writing permission in their own folder while the world is running. In order to use your new meshes in the game you need to restart the world.
+Matrices can be used right away, nodes using the generated .obj files will be registered at the next world startup.
 
-During world startup the mod will move all the temporary files to the `/models` folder and will load them.
-
-You can't have two meshes with the same name (during the saving process the mod checks both the temporary meshes that haven't been loaded yet and those that have been already moved to the mod's folder).
+You can't have two meshes with the same name.
 
 By default, four versions of each mesh will be available (which you can toggle in the interface for each capture).
 
@@ -101,7 +99,7 @@ Up to 8 collision boxes will be created according to the mesh geometry allowing 
 
 ![Auto collision box 2](/screenshots/auto-collision-box-2.png)
 
-Such new blocks can't be crafted but you can obtain as many as you want by clicking on the "Giveme Meshes" button of the capture interface, which will show you something like this (remember that you need to restart the world for new meshes to appear there):
+Such new blocks can't be crafted but you can obtain as many as you want by clicking on the "Giveme Meshes" button of the capture interface, which will show you something like this (meshes that have been captured in the current session haven't been registered as nodes yet, you'll need to restart the world for those to become available):
 
 ![Giveme mesh](/screenshots/giveme-mesh.png)
 
@@ -155,11 +153,7 @@ Since canvases can be crafted and since the canvas interface allows players to g
 
 # Managing Meshes
 
-Temporary meshes (the ones captured in the current playing session, waiting to be moved to the mod's folder) can be deleted right away from "Manage meshes" interface: *there will be NO confirmation when deleting temporary captures!*
-
-![Delete temporary now](/screenshots/delete-temporary-now.png)
-
-Meshes that have already been moved to the mod's folder can't be deleted right away and need to be marked for deletion:
+Meshes can be marked for deletion:
 
 ![Mark for deletion](/screenshots/mark-for-deletion.png)
 
@@ -173,7 +167,7 @@ When meshes get marked for deletion that information will go into the mod's stor
 
 Those deletions will not be performed until you enter _that_ world again.
 
-All meshes will be finally stored in the mod's folder - this means that _all_ worlds will end up sharing the _same_ meshes. If you delete any mesh in a world it will disappear for all worlds.
+All meshes are stored in the mod_data folder - this means that _all_ worlds will end up sharing the _same_ meshes. If you delete any mesh in a world it will disappear for all worlds.
 
 # Dealing with matrices
 
@@ -197,7 +191,7 @@ You can also completely fill the canvas space using the `Fill/Empty Canvas` butt
 
 ![Fill canvas](/screenshots/fill-canvas.png)
 
-Finally, matrices can be accessed and rebuilt immediately, without the need for restarting the world. This means that you can use this feature to blueprint something and rebuild it with wool blocks right away as many times as you want, then go to `Manage meshes` and delete such temporary capture to avoid adding any new meshes to your library.
+Finally, matrices can be accessed and rebuilt immediately, without the need for restarting the world. This means that you can use this feature to blueprint something and rebuild it with wool blocks right away as many times as you want, without the need to reload the world (reloading the world is only needed to register the new nodes).
 
 [Here are some examples](/examples.md) explaining how to use some of the above features.
 

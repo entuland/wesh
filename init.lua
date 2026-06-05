@@ -1,16 +1,17 @@
 
 wesh = {
 	name = "wesh",
-	temp_foldername = "wesh_temp_obj_files",
+	gen_prefix = "mesh_",
 	default_max_faces = 8000,
 	mod_path = minetest.get_modpath(minetest.get_current_modname()),
 	vt_size = 72,
 	player_canvas = {},
 	forms = {},
 	content_ids = {},
+	world_restart_required = "[world restart required]"
 }
 
-wesh.models_path = wesh.mod_path .. "/models/"
+wesh.models_path = minetest.get_mod_data_path() .. "/models/"
 local storage = dofile(wesh.mod_path .. "/storage.lua")
 local smartfs = dofile(wesh.mod_path .. "/lib/smartfs.lua")
 
@@ -35,29 +36,32 @@ local function copy_file(source, dest)
 	return true, "files copied successfully"
 end
 
-local function custom_or_default(modname, path, filename)
+local function custom_or_default(modname, default_path, custom_path, filename)
 	local default_filename = "default/" .. filename
-	local full_filename = path .. "/custom." .. filename
-	local full_default_filename = path .. "/" .. default_filename
+	local custom_filename = "custom." .. filename
+	local full_custom_filename = custom_path .. "/" .. custom_filename
+	local full_default_filename = default_path .. "/" .. default_filename
 	
-	os.rename(path .. "/" .. filename, full_filename)
-	
-	local file = io.open(full_filename, "rb")
+	local file = io.open(full_custom_filename, "rb")
 	if not file then
-		minetest.debug("[" .. modname .. "] Copying " .. default_filename .. " to " .. filename .. " (path: " .. path .. ")")
-		local success, err = copy_file(full_default_filename, full_filename)
+		minetest.debug("[" .. modname .. "] Copying " .. default_filename .. " to " .. custom_filename .. " (path: " .. custom_path .. ")")
+		local success, err = copy_file(full_default_filename, full_custom_filename)
 		if not success then
 			minetest.debug("[" .. modname .. "] " .. err)
 			return false
 		end
-		file = io.open(full_filename, "rb")
+		file = io.open(full_custom_filename, "rb")
 		if not file then
-			minetest.debug("[" .. modname .. "] Unable to load " .. filename .. " file from path " .. path)
+			minetest.debug("[" .. modname .. "] Unable to load " .. filename .. " file from path " .. custom_path)
 			return false
 		end
 	end
 	file:close()
-	return full_filename
+	return full_custom_filename
+end
+
+local function string_ends_with(str, ending)
+	return ending == "" or string.sub(str, -string.len(ending)) == ending
 end
 
 -- ========================================================================
@@ -65,11 +69,8 @@ end
 -- ========================================================================
 
 function wesh.init()
-	wesh.temp_path = minetest.get_worldpath() .. "/mod_storage/" .. wesh.temp_foldername .. "/"
-	wesh.gen_prefix = "mesh_"
-
-	if not minetest.mkdir(wesh.temp_path) then
-		error("[wesh] Unable to create folder " .. wesh.temp_path)
+	if not minetest.mkdir(wesh.models_path) then
+		error("[wesh] Unable to create folder " .. wesh.models_path)
 	end
 
 	wesh.init_colors()
@@ -81,7 +82,6 @@ function wesh.init()
 	wesh.register_canvas_nodes()
 	
 	wesh.delete_marked_objs()
-	wesh.move_temp_files()
 	wesh.load_mod_meshes()	
 end
 
@@ -131,7 +131,7 @@ function wesh.init_colors()
 		end
 	end
 
-	local full_colors_filename = custom_or_default(wesh.name, wesh.mod_path, "nodecolors.conf")
+	local full_colors_filename = custom_or_default(wesh.name, wesh.mod_path, minetest.get_mod_data_path(), "nodecolors.conf")
 	if not full_colors_filename then return end
 	local file = io.open(full_colors_filename, "rb")
 	if not file then return end
@@ -150,7 +150,7 @@ function wesh.init_colors()
 	end
 	file:close()
 
-	local full_rgb_filename = custom_or_default(wesh.name, wesh.mod_path, "colors.txt")
+	local full_rgb_filename = custom_or_default(wesh.name, wesh.mod_path, minetest.get_mod_data_path(), "colors.txt")
 	if not full_rgb_filename then return end
 	local rgb_file = io.open(full_rgb_filename, "rb")
 	if not rgb_file then return end
@@ -330,7 +330,7 @@ function wesh.init_variants()
 	wesh.variants = {
 		plain = "plain-16.png",
 	}
-	local full_variants_filename = custom_or_default(wesh.name, wesh.mod_path, "nodevariants.lua")
+	local full_variants_filename = custom_or_default(wesh.name, wesh.mod_path, minetest.get_mod_data_path(), "nodevariants.lua")
 	if not full_variants_filename then return end
 	
 	local file = io.open(full_variants_filename, "rb")
@@ -393,7 +393,7 @@ function wesh.register_canvas_nodes()
 	
 	wesh.valid_canvas_sizes = {}
 	
-	local full_recipes_filename = custom_or_default(wesh.name, wesh.mod_path, "recipes.lua")
+	local full_recipes_filename = custom_or_default(wesh.name, wesh.mod_path, minetest.get_mod_data_path(), "recipes.lua")
 	if not full_recipes_filename then return end
 	
 	local recipes = dofile(full_recipes_filename);
@@ -589,8 +589,6 @@ wesh.forms.delete_meshes = smartfs.create("wesh.forms.delete_meshes", function(s
 			action_button:setText("Mark for deletion")	
 		elseif obj.type == "pending deletion" then
 			action_button:setText("Cancel pending deletion")	
-		elseif obj.type == "temporary" then
-			action_button:setText("Delete selected temporary NOW!")	
 		end
 	end
 	
@@ -624,8 +622,6 @@ wesh.forms.delete_meshes = smartfs.create("wesh.forms.delete_meshes", function(s
 			wesh.mark_obj_for_deletion(obj.filename)
 		elseif obj.type == "pending deletion" then
 			wesh.unmark_obj_for_deletion(obj.filename)
-		elseif obj.type == "temporary" then
-			wesh.delete_temp_obj(obj.filename)
 		end
 		fill_list()	
 		update_button()
@@ -645,7 +641,7 @@ wesh.forms.giveme_meshes = smartfs.create("wesh.forms.giveme_meshes", function(s
 		local data = wesh.get_obj_filedata(obj_filename)
 		if not data.variants then break end
 		for variant, _ in pairs(data.variants) do
-			stored_variants:addItem(wesh.create_nodename(obj_filename, variant))
+			stored_variants:addItem(wesh.create_nodename_checked(obj_filename, variant))
 		end
 	end
 
@@ -656,6 +652,10 @@ wesh.forms.giveme_meshes = smartfs.create("wesh.forms.giveme_meshes", function(s
 	
 	local function give_mesh_callback(_, state)
 		local nodename = state:get("stored_variants"):getSelectedItem()
+		if string_ends_with(nodename, wesh.world_restart_required) then
+			wesh.notify(state.player, nodename .. " cannot be given, " .. wesh.world_restart_required)		
+			return
+		end
 		if not nodename then return end
 		local player_inv = minetest.get_player_by_name(state.player):get_inventory()
 		player_inv:add_item("main", {name = nodename, count = 1})
@@ -672,15 +672,10 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 	local canvas = wesh.player_canvas[state.player]
 	
 	local stored_matrices = wesh.filter_non_matrix(wesh.get_stored_files(), canvas)
-	local temp_matrices = wesh.filter_non_matrix(wesh.get_temp_files(), canvas)
 	
 	local matrices_list = state:listbox(0.5, 0.5, 7, 4.5, "matrices_list")	
 	
 	for _, matrix_filename in pairs(stored_matrices) do
-		matrices_list:addItem(matrix_filename)
-	end
-
-	for _, matrix_filename in pairs(temp_matrices) do
 		matrices_list:addItem(matrix_filename)
 	end
 
@@ -721,12 +716,6 @@ wesh.forms.import_matrix = smartfs.create("wesh.forms.import_matrix", function(s
 			end
 		end
 
-		for _, matrix_filename in pairs(temp_matrices) do
-			if matrix_filename == selected_matrix_filename then
-				full_matrix_filename = wesh.temp_path .. matrix_filename
-				break
-			end
-		end
 		local negative = negative_check:getValue()
 		local mononode = mononode_check:getValue()
 		local original = original_check:getValue()
@@ -840,7 +829,7 @@ function wesh.save_new_mesh(canvas, playername, description)
 	end
 	
 	local obj_filename = wesh.gen_prefix .. sanitized_meshname .. ".obj"
-	for _, entry in ipairs(wesh.get_all_files()) do
+	for _, entry in ipairs(wesh.get_stored_files()) do
 		if entry == obj_filename then		
 			wesh.notify(playername, "Mesh name '" .. description .. "' already taken, pick a new one")
 			return false
@@ -934,6 +923,14 @@ function wesh.create_nodename(obj_filename, variant)
 	return "wesh:" .. obj_filename:gsub("[^%w]+", "_"):gsub("_obj", "") .. "_" .. variant 
 end
 
+function wesh.create_nodename_checked(obj_filename, variant)
+	local node_name = wesh.create_nodename(obj_filename, variant)
+	if minetest.registered_nodes[node_name] then
+		return node_name
+	end
+	return node_name .. " " .. wesh.world_restart_required
+end
+
 function wesh.prepare_data_file(description, canvas)
 	local boxes = {}
 	wesh.merge_collision_boxes(canvas)	
@@ -959,10 +956,10 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername,
 
 	if canvas.generate_obj then
 		-- save .obj file
-		local full_filename = wesh.temp_path .. "/" .. obj_filename
+		local full_filename = wesh.models_path .. "/" .. obj_filename
 		local file, errmsg = io.open(full_filename, "wb")
 		if not file then
-			wesh.notify(playername, "Unable to write to file '" .. obj_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+			wesh.notify(playername, "Unable to write to file '" .. obj_filename .. "' from '" .. wesh.models_path .. "' - error: " .. errmsg)
 			return false
 		end
 		file:write(meshdata)
@@ -970,26 +967,26 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername,
 		
 		-- save .dat file
 		local data_filename = obj_filename .. ".dat"
-		local full_data_filename = wesh.temp_path .. "/" .. data_filename
+		local full_data_filename = wesh.models_path .. "/" .. data_filename
 		local file, errmsg = io.open(full_data_filename, "wb")
 		if not file then
-			wesh.notify(playername, "Unable to write to file '" .. data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+			wesh.notify(playername, "Unable to write to file '" .. data_filename .. "' from '" .. wesh.models_path .. "' - error: " .. errmsg)
 			return false
 		end
 		file:write(wesh.prepare_data_file(description, canvas))
 		file:close()
-		wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.temp_path .. "'")
-		wesh.notify(playername, "Reload the world to move newly created mesh to the mod folder")
+		wesh.notify(playername, "Mesh saved to '" .. obj_filename .. "' in '" .. wesh.models_path .. "'")
+		wesh.notify(playername, "Reload the world to register the new node, matrices can be used right away without reloading")
 		wesh.notify(playername, "Mesh stats: " .. canvas.voxel_count .. " voxels, " .. #canvas.vertices .. " vertices, " .. #canvas.faces .. " faces, " .. canvas.nodename_count .. " nodenames")
 	end
 	
 	if canvas.generate_matrix then
 		-- save .matrix.dat file
 		local matrix_data_filename = obj_filename .. ".matrix" .. canvas.size .. ".dat"
-		local full_matrix_data_filename = wesh.temp_path .. "/" .. matrix_data_filename
+		local full_matrix_data_filename = wesh.models_path .. "/" .. matrix_data_filename
 		local file, errmsg = io.open(full_matrix_data_filename, "wb")
 		if not file then
-			wesh.notify(playername, "Unable to write to file '" .. matrix_data_filename .. "' from '" .. wesh.temp_path .. "' - error: " .. errmsg)
+			wesh.notify(playername, "Unable to write to file '" .. matrix_data_filename .. "' from '" .. wesh.models_path .. "' - error: " .. errmsg)
 			return false
 		end
 		
@@ -1000,8 +997,7 @@ function wesh.save_mesh_to_file(obj_filename, meshdata, description, playername,
 		
 		file:write(minetest.serialize(matrix_data))
 		file:close()
-		wesh.notify(playername, "Matrix file saved to '" .. matrix_data_filename .. "' in '" .. wesh.temp_path .. "'")
-		wesh.notify(playername, "Reload the world to move newly created matrix to the mod folder")
+		wesh.notify(playername, "Matrix file saved to '" .. matrix_data_filename .. "' in '" .. wesh.models_path .. "'")
 	end
 
 	return true
@@ -1031,17 +1027,8 @@ function wesh.filter_non_matrix(filelist, canvas)
 	return list
 end
 
-function wesh.get_all_files()
-	local all = wesh.get_temp_files()
-	for _, entry in pairs(wesh.get_stored_files()) do
-		table.insert(all, entry)
-	end
-	return all
-end
-
 function wesh.get_all_obj_files()
 	local stored_obj_files = wesh.filter_non_obj(wesh.get_stored_files())
-	local temp_obj_files = wesh.filter_non_obj(wesh.get_temp_files())
 	local marked_objs = wesh.retrieve_marked_objs()
 	local result = {}
 
@@ -1052,22 +1039,11 @@ function wesh.get_all_obj_files()
 		})
 	end
 	
-	for _, obj_filename in pairs(temp_obj_files) do
-		table.insert(result, {
-			filename = obj_filename,
-			type = "temporary",
-		})
-	end
-
 	return result
 end
 
 function wesh.get_stored_files()
 	return minetest.get_dir_list(wesh.models_path, false)
-end
-
-function wesh.get_temp_files()
-	return minetest.get_dir_list(wesh.temp_path, false)
 end
 
 function wesh.is_valid_obj_filename(obj_filename)
@@ -1078,17 +1054,6 @@ function wesh.is_valid_matrix_filename(matrix_filename, canvas)
 	local pattern = "^" .. wesh.gen_prefix .. ".-%.obj%.matrix(%d*)%.dat$"
 	local result = matrix_filename:match(pattern)
 	return tonumber(result) == canvas.size or result == ""
-end
-
--- ========================================================================
--- file movement / copy
--- ========================================================================
-
-function wesh.move_temp_files()
-	local meshes = wesh.get_temp_files()
-	for _, filename in ipairs(meshes) do
-		os.rename(wesh.temp_path .. "/" .. filename, wesh.models_path .. filename)
-	end
 end
 
 -- ========================================================================
@@ -1109,11 +1074,6 @@ function wesh.delete_obj_fileset(full_obj_filename)
 	for size, _ in ipairs(wesh.valid_canvas_sizes) do
 		os.remove(full_obj_filename .. ".matrix" .. size .. ".dat")	
 	end
-end
-
-function wesh.delete_temp_obj(obj_filename)
-	local full_obj_filename = wesh.temp_path .. "/" .. obj_filename
-	wesh.delete_obj_fileset(full_obj_filename)
 end
 
 -- ========================================================================
@@ -1159,6 +1119,11 @@ function wesh.load_mesh(obj_filename)
 	
 	local description = data.description or "Custom Woolen Mesh"
 	local variants = data.variants or { plain = "plain-16.png" }
+	
+	minetest.dynamic_add_media({
+		filename = obj_filename,
+		filepath = wesh.models_path .. obj_filename,
+	})
 	
 	for variant, tile in pairs(variants) do
 		local props = {
@@ -1277,7 +1242,6 @@ function wesh.import_matrix(full_matrix_filename, playername, original, negative
 	if invalid_size("x", #matrix_data) or invalid_size("y", #matrix_data[1]) or invalid_size("z", #matrix_data[1][1]) then
 		return false
 	end
-	
 	
 	local min_pos = wesh.make_absolute({ x = 1, y = 1, z = 1 }, canvas)
 	local max_pos = wesh.make_absolute({ x = canvas.size, y = canvas.size, z = canvas.size }, canvas)
